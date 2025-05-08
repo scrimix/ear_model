@@ -43,28 +43,31 @@ find_package(SndFile REQUIRED)
 
 include_directories(${SDL2_INCLUDE_DIRS})
 
-add_executable(ear_model main.cpp)
+include_directories("src/include")
+
+include_directories("crow/include")
+
+add_subdirectory(midifile)
+
+add_executable(ear_model src/main_old.cpp)
 target_link_libraries(ear_model carfac ${opencv_lib})
 
-add_executable(midi_gen midi_gen.cpp)
+add_executable(midi_gen src/midi_gen.cpp)
 target_include_directories(midi_gen PRIVATE ${FLUIDSYNTH_INCLUDE_DIRS})
 target_link_libraries(midi_gen ${FLUIDSYNTH_LIBRARIES})
 
-add_executable(spectro spectro.cpp)
+add_executable(spectro src/spectro.cpp)
 target_include_directories(spectro PRIVATE ${FFTW3_INCLUDE_DIR})
 target_link_libraries(spectro PRIVATE ${FFTW3_LIBRARY} ${opencv_lib} ${SNDFILE_LIBRARIES})
 
-add_executable(playback playback.cpp)
+add_executable(playback src/playback.cpp)
 target_link_libraries(playback ${SDL2_LIBRARIES} carfac ${opencv_lib})
 
-add_executable(mnist_train mnist_train.cpp)
+add_executable(mnist_train src/mnist_train.cpp)
 target_link_libraries(mnist_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
 
-add_executable(carfac_train carfac_train.cpp)
-target_link_libraries(carfac_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
-
-add_executable(notes_train notes_train.cpp)
+add_executable(notes_train src/notes_train.cpp)
 target_link_libraries(notes_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
 
-add_executable(wav_to_midi wav_to_midi.cpp)
-target_link_libraries(wav_to_midi ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
+add_executable(wav_to_midi src/wav_to_midi.cpp)
+target_link_libraries(wav_to_midi ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core midifile)

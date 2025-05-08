@@ -27,6 +27,7 @@ struct note_model_params_t {
   int pot_radius = 8;
   int tm_cell_per_column = 6;
   int binary_thresh = 40;
+  float train_noise = 0.1;
   
   // carfac
   float loudness_coef = 40;
@@ -83,6 +84,14 @@ public:
     audio.buffer = read_wav(file_path, params.sample_rate);
   }
 
+  void load_audio(std::vector<float> const& wav)
+  {
+    carfac_reader.reset();
+    carfac_reader.init(wav);
+    carfac_reader.set(params.sample_rate, params.buffer_size, params.loudness_coef);
+    audio.buffer = wav;
+  }
+
   void save(std::string model_name)
   {
     // Save the model
@@ -136,6 +145,8 @@ public:
   {
     auto vec_img = mat_to_vector(img);
     input.setDense(vec_img);
+    if(train)
+      input.addNoise(params.train_noise);
     sp.compute(input, train, columns);
     tm.compute(columns, train);
     tm.activateDendrites();

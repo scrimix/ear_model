@@ -34,7 +34,9 @@ unsigned int duration = 1440;
 // unsigned int notes[] = { 60, 64, 67, 72, 76, 79, 84, 79, 76, 72, 67, 64 };
 
 // unsigned int notes[] = {60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70 };
-unsigned int notes[] = {40, 52, 64, 76, 88, 100};
+// unsigned int notes[] = {40, 52, 64, 76, 88, 100}; // E2-E7
+
+unsigned int notes[] = {84, 79, 76, 72, 67, 64, 60}; // c6-c4
 
 /* number of notes in one pattern */
 unsigned int pattern_size;
@@ -106,6 +108,25 @@ std::vector<note_event_t> schedule_pattern(int64_t time_marker)
         schedule_noteoff(channel, note, time_marker);
         events.push_back({note, time_marker, note_event_t::DOWN});
         time_marker += note_duration_range(gen) * 2; // pause
+    }
+
+    return events;
+}
+
+std::vector<note_event_t> schedule_main_notes(int64_t time_marker, int duration)
+{
+    std::vector<note_event_t> events;
+
+    auto channel = 6;
+    for(auto i = 0; i < std::size(notes); ++i)
+    {
+        int note = notes[i];
+        schedule_noteon(channel, note, time_marker);
+        events.push_back({note, time_marker, note_event_t::UP});
+        time_marker += duration;
+        schedule_noteoff(channel, note, time_marker);
+        events.push_back({note, time_marker, note_event_t::DOWN});
+        time_marker += duration; // pause
     }
 
     return events;
@@ -187,9 +208,9 @@ void generate_midi(std::string file_name = "rnd")
                             synth);
 
         
-        /* register the client name and callback */
-        client_destination = fluid_sequencer_register_client(sequencer,
-                            "arpeggio", sequencer_callback, NULL);
+        // /* register the client name and callback */
+        // client_destination = fluid_sequencer_register_client(sequencer,
+        //                     "arpeggio", sequencer_callback, NULL);
 
         // audiodriver = new_fluid_audio_driver(settings, synth);
 
@@ -200,13 +221,16 @@ void generate_midi(std::string file_name = "rnd")
         auto start = time_marker;
         std::vector<note_event_t> note_events;
         for(auto i = 0; i < 1; i++){
-            auto events = schedule_pattern(start);
+            // auto events = schedule_pattern(start);
+            auto events = schedule_main_notes(start, 300);
             for(auto& note : events)
                 note_events.push_back(note);
         }
         std::sort(note_events.begin(), note_events.end(), [](auto e1, auto e2){ return e1.time_point < e2.time_point; });
         time_marker = note_events.back().time_point;
         save_notes(note_events, dir + "/" + file_name + ".csv");
+
+        std::cout << "time marker?? " << time_marker << std::endl;
 
         while (fluid_file_renderer_process_block(renderer) == FLUID_OK && fluid_sequencer_get_tick(sequencer) <= time_marker){
             std::cout << "time tick " << fluid_sequencer_get_tick(sequencer) << std::endl;
@@ -226,6 +250,6 @@ void generate_midi(std::string file_name = "rnd")
 int
 main(int argc, char *argv[])
 {
-    generate_midi("rnd_single_10");
+    generate_midi("arpegio_test_c6_c4");
     return 0;
 }

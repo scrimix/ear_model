@@ -245,16 +245,19 @@ public:
 struct note_image_t {
     cv::Mat mat;
     std::vector<str_note_event_t> midi;
+    int64_t midi_ts = 0;
     bool is_valid() const { return !mat.empty(); }
 };
 
 class carfac_reader_t {
 public:
     void init(std::string file_path);
+    void init(std::vector<float> const& wav);
     void set(int sample_rate, int buffer_size, int loudness_coef);
     int64_t get_render_pos() const;
     note_image_t next();
     void reset();
+    int64_t total_note_count() const;
 
 private:
 
@@ -267,6 +270,11 @@ private:
     PitchogramPipeline* pipeline = nullptr;
 };
 
+inline int64_t carfac_reader_t::total_note_count() const
+{
+    return active_notes.all_notes.size();
+}
+
 inline void carfac_reader_t::set(int sample_rate_arg, int buffer_size_arg, int loudness_coef_arg)
 {
     sample_rate = sample_rate_arg;
@@ -276,11 +284,30 @@ inline void carfac_reader_t::set(int sample_rate_arg, int buffer_size_arg, int l
 
 inline void carfac_reader_t::init(std::string file_path)
 {
+    if(pipeline){
+        delete pipeline;
+        pipeline = 0;
+    }
     sample_data = read_wav(file_path);
     std::string notes_path = replaced(file_path, ".wav", ".csv");
     if(std::filesystem::exists(notes_path))
         active_notes.all_notes = read_notes(notes_path);
 
+    render_pos = 0;
+    PitchogramPipelineParams params;
+    params.num_frames = sample_data.size() / buffer_size;
+    params.num_samples_per_segment = buffer_size;
+    params.pitchogram_params.light_color_theme = false;
+    pipeline = new PitchogramPipeline(sample_rate, params);
+}
+
+inline void carfac_reader_t::init(std::vector<float> const& wav)
+{
+    if(pipeline){
+        delete pipeline;
+        pipeline = 0;
+    }
+    sample_data = wav;
     render_pos = 0;
     PitchogramPipelineParams params;
     params.num_frames = sample_data.size() / buffer_size;
@@ -314,7 +341,9 @@ inline note_image_t carfac_reader_t::next()
     render_pos += bytes_to_copy;
 
     // update active notes based on tick
-    active_notes.advance(float(render_pos) / sizeof(float) / sample_rate * 1000);
+    int64_t current_midi_ts = float(render_pos) / sizeof(float) / sample_rate * 1000;
+    active_notes.advance(current_midi_ts);
+    result.midi_ts = current_midi_ts;
     
     return result;
 }
