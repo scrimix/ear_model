@@ -3,6 +3,7 @@
 #include <ostream>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 
 class VectorStreamBuf : public std::streambuf {
 public:
@@ -31,3 +32,20 @@ protected:
 private:
   std::vector<unsigned char>& _dest;
 };
+
+
+inline void save_buf_to_file(const std::vector<unsigned char>& buf,
+                            const std::string& filename) {
+    std::ofstream out(filename, std::ios::binary);
+    if (!out) {
+        throw std::runtime_error("Failed to open file for writing: " + filename);
+    }
+    out.write(reinterpret_cast<const char*>(buf.data()), buf.size());
+    if (!out) {
+        throw std::runtime_error("Failed while writing to file: " + filename);
+    }
+    out.close();
+    if (!out) {
+        throw std::runtime_error("Failed to close file: " + filename);
+    }
+}

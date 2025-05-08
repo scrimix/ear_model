@@ -1,24 +1,5 @@
 #include "wav_to_midi.h"
-#include "vector_buf.h"
 #include "crow.h"
-
-void generate_labels(midi_labeler_t& labeler)
-{
-    note_model_params_t params;
-    params.models_path = "../../models/carfac_latest";
-
-    note_model_t model;
-    model.setup(params);
-    model.load();
-
-    // model.load_audio(read_wav("/Users/scrimix/Music/my_piano_test.wav"));
-    // model.load_audio(read_wav("../../dataset/rnd_multi/rnd_single_1.wav"));
-    // auto wav = read_wav("../../dataset/tests/arpegio_test_c6_c4.wav");
-    auto wav = read_wav("../../dataset/warmup/random_speech.wav");
-    auto stable_notes = detect_notes(model, labeler, wav);
-    for(auto event : stable_notes)
-        std::cout << event << std::endl;
-}
 
 std::vector<uchar> convert_wav_to_midi(std::vector<float> const& wav)
 {
@@ -36,17 +17,38 @@ std::vector<uchar> convert_wav_to_midi(std::vector<float> const& wav)
     return midi_file;
 }
 
+void run_web_app() {
+    crow::SimpleApp app;
+    CROW_ROUTE(app, "/ping")([](){ return "pong"; });
+
+    CROW_ROUTE(app, "/convert")
+        .methods("POST"_method)
+    ([](const crow::request& req, crow::response& res){
+        auto ct = req.get_header_value("Content-Type");
+        if (ct != "audio/wav" && ct != "application/octet-stream") {
+            res.code = 415;
+            res.write("Expected WAV body");
+            return res.end();
+        }
+
+        auto wav = decodeWavToMonoFloats(req.body, 44100.f);
+        auto midi = convert_wav_to_midi(wav);
+
+        res.set_header("Content-Type", "audio/midi");
+        res.body.assign((const char*)(midi.data()), midi.size());
+        return res.end();
+    });
+
+    app.port(8080).multithreaded().run();
+}
+
 int main()
 {
-    // midi_labeler_t labeler;
-    // generate_labels(labeler);
-    // labeler.dump("speech.csv");
-    // return 0;
+    // run_web_app();
 
-    // labeler.read("my_piano_labels.csv");
+    auto wav = read_wav("../../my_piano_test_stereo.wav");
+    auto midi = convert_wav_to_midi(wav);
+    // save_buf_to_file(midi, "../../test_output.mid");
 
-    // auto stable_notes = labeler.get_stable_notes();
-    // for(auto& midi_event : stable_notes)
-    //     std::cout << midi_event << std::endl;
-
+    return 0;
 }

@@ -47,7 +47,13 @@ include_directories("src/include")
 
 include_directories("crow/include")
 
+include_directories("dr_libs")
+
 add_subdirectory(midifile)
+
+
+list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/crow")
+find_package(Crow REQUIRED)
 
 add_executable(ear_model src/main_old.cpp)
 target_link_libraries(ear_model carfac ${opencv_lib})
@@ -70,4 +76,4 @@ add_executable(notes_train src/notes_train.cpp)
 target_link_libraries(notes_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
 
 add_executable(wav_to_midi src/wav_to_midi.cpp)
-target_link_libraries(wav_to_midi ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core midifile)
+target_link_libraries(wav_to_midi ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core midifile asio::asio)

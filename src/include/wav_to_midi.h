@@ -118,19 +118,16 @@ inline std::vector<midi_event_t> detect_notes(note_model_t& model, midi_labeler_
       
       auto img = model.preproc_input(note_image.mat);
       auto labels = midi_to_labels(note_image.midi);
-
       model.feedforward(img, false);
-
       auto pdf = model.clsr.infer(model.outTM);
       auto pred_midi = argmax(pdf);
-
       if(pred_midi > 0)
         labeler.add_new(pred_midi, note_image.midi_ts);
       else
         labeler.skip();
 
-    //   model.visualize(note_image, img, pred_midi);
-    //   cv::waitKey(200);
+      model.visualize(note_image, img, pred_midi);
+      cv::waitKey(100);
     }
 
     return labeler.get_stable_notes();
