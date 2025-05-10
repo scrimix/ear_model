@@ -113,6 +113,7 @@
       /* auto‐scale height to preserve the ratio */
       object-fit: contain;
       /* if you also set width/height on the container */
+      min-width: 450px;
     }
 
     .side-img {
@@ -282,9 +283,12 @@
         return;
       }
     }
+    else if (!audio) {
+      return;
+    }
 
     // waiting for first second of images to buffer
-    if (!audioCtx && newestImageTime < 1) {
+    if (newestImageTime < 1) {
       if (packets_paused) {
         ws.send(JSON.stringify({ "type": "demo_state", "value": "continue" }));
         packets_paused = false;
@@ -293,22 +297,34 @@
     }
 
     if (!audio_started) {
-      const reader = new FileReader();
-      reader.onload = async evt => {
-        const data = evt.target.result;
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        try {
-          const buf = await audioCtx.decodeAudioData(data);
-          const src = audioCtx.createBufferSource();
-          src.buffer = buf;
-          src.connect(audioCtx.destination);
-          src.start();
-          groundZeroTime = audioCtx.currentTime;
-        } catch (err) {
-          console.error(err);
-        }
-      };
-      reader.readAsArrayBuffer(selectedFile);
+      // const reader = new FileReader();
+      // reader.onload = async evt => {
+      //   const data = evt.target.result;
+      //   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      //   try {
+      //     const buf = await audioCtx.decodeAudioData(data);
+      //     const src = audioCtx.createBufferSource();
+      //     src.buffer = buf;
+      //     src.connect(audioCtx.destination);
+      //     src.start();
+      //     groundZeroTime = audioCtx.currentTime;
+      //   } catch (err) {
+      //     console.error(err);
+      //   }
+      // };
+      // reader.readAsArrayBuffer(selectedFile);
+
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      try {
+        const src = audioCtx.createBufferSource();
+        src.buffer = audio;
+        src.connect(audioCtx.destination);
+        src.start();
+        groundZeroTime = audioCtx.currentTime;
+      } catch (err) {
+        console.error(err);
+      }
+
       audio_started = true;
     }
 
@@ -336,18 +352,17 @@
 
   ws.onmessage = evt => {
     if (evt.data instanceof ArrayBuffer) {
-      // // Audio chunk
-      // const samples = new Float32Array(evt.data);
-      // const frameCount = samples.length;
-      // const buf = audioCtx.createBuffer(1, frameCount, sampleRate);
-      // buf.copyToChannel(samples, 0);
-      // audio = buf;
+      // Audio chunk
+      const samples = new Float32Array(evt.data);
+      const frameCount = samples.length;
+      // normalise from 0:1 into -1:+1
+      for (let i = 0; i < frameCount; i++)
+        samples[i] = samples[i] * 2 - 1;
 
-      // const src = audioCtx.createBufferSource(); // create a new source for this chunk
-      // src.buffer = audio;
-      // src.connect(audioCtx.destination);
-      // src.start();
-      // audio_started = true;
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = audioCtx.createBuffer(1, frameCount, sampleRate);
+      buf.copyToChannel(samples, 0);
+      audio = buf;
     }
     else {
       const msg = JSON.parse(evt.data);

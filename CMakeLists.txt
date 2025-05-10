@@ -55,8 +55,8 @@ add_subdirectory(midifile)
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/crow")
 find_package(Crow REQUIRED)
 
-add_executable(ear_model src/main_old.cpp)
-target_link_libraries(ear_model carfac ${opencv_lib})
+
+set(COMMON_LIBS carfac ${opencv_lib} ${SNDFILE_LIBRARIES} htm_core midifile asio::asio)
 
 add_executable(midi_gen src/midi_gen.cpp)
 target_include_directories(midi_gen PRIVATE ${FLUIDSYNTH_INCLUDE_DIRS})
@@ -64,16 +64,16 @@ target_link_libraries(midi_gen ${FLUIDSYNTH_LIBRARIES})
 
 add_executable(spectro src/spectro.cpp)
 target_include_directories(spectro PRIVATE ${FFTW3_INCLUDE_DIR})
-target_link_libraries(spectro PRIVATE ${FFTW3_LIBRARY} ${opencv_lib} ${SNDFILE_LIBRARIES})
+target_link_libraries(spectro PRIVATE ${FFTW3_LIBRARY} ${COMMON_LIBS})
 
 add_executable(playback src/playback.cpp)
-target_link_libraries(playback ${SDL2_LIBRARIES} carfac ${opencv_lib})
+target_link_libraries(playback ${SDL2_LIBRARIES} ${COMMON_LIBS})
 
 add_executable(mnist_train src/mnist_train.cpp)
-target_link_libraries(mnist_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
+target_link_libraries(mnist_train ${COMMON_LIBS})
 
 add_executable(notes_train src/notes_train.cpp)
-target_link_libraries(notes_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
+target_link_libraries(notes_train ${COMMON_LIBS})
 
 add_executable(app src/app.cpp)
-target_link_libraries(app ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core midifile asio::asio)
+target_link_libraries(app ${COMMON_LIBS})

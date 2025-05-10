@@ -179,9 +179,6 @@ struct messenger_t
     void send_song(std::vector<float> const& wav)
     {
         std::lock_guard<std::mutex> guard(clients_mtx);
-        // std::string audio;
-        // audio.assign(reinterpret_cast<const char*>(wav.data()), wav.size() * sizeof(float));
-
         av_packet_t packet;
         packet.wav = wav;
         auto audio = packet.to_wav_string();
@@ -228,7 +225,7 @@ void run_web_app() {
             return res.end();
         }
 
-        auto wav = decodeWavToMonoFloats(req.body, 44100.f);
+        auto wav = readWavBuffer(req.body);
         runner.load_audio(wav);
         while(!runner.is_finished()){
             runner.step();
@@ -264,7 +261,7 @@ void run_web_app() {
         }
         stop_demo = false;
         demo = std::thread([&, data = req.body]{
-            auto wav = decodeWavToMonoFloats(data, 44100.f);
+            auto wav = readWavBuffer(req.body);
             runner.load_audio(wav);
             demo_paused = false;
             packet_counter = 0;
@@ -301,7 +298,6 @@ void run_web_app() {
                 std::cout << "skipping binary messages..." << std::endl;
             }
             else{
-                std::cout << "message! " <<  data << std::endl;
                 try{
                     auto js = crow::json::load(data);
                     if(js["type"] == "demo_state" && js["value"] == "continue")

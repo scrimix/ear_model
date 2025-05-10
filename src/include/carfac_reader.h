@@ -21,90 +21,9 @@
 #include <thread>
 #include <fstream>
 #include "helpers.h"
+#include "wav_reader.h"
 
 using namespace std::literals;
-
-inline std::vector<float> read_wav(std::string input_file, float sample_rate = 44100.0f)
-{
-    constexpr int kChunkSize = 512;  // 11 ms.
-    // constexpr int kNumChunks = 2048;
-    int kNumChunks = sample_rate / kChunkSize;
-
-    auto file_size = std::filesystem::file_size(input_file);
-    auto seconds = (file_size - 44) / sample_rate / sizeof(int);
-    // std::cout << "file size? " << file_size << " " << seconds << std::endl;
-    kNumChunks *= seconds;
-
-    std::FILE* wav = std::fopen(input_file.c_str(), "rb");
-    assert(wav != nullptr);
-    // Seek past 44-byte header
-    assert(std::fseek(wav, 44, SEEK_CUR) == 0);
-
-    std::vector<float> data;
-    for (int i = 0; i < kNumChunks; ++i) {
-    // Read a chunk, converting int16 -> float and mixing stereo down to mono.
-    float input[kChunkSize];
-    for (int j = 0; j < kChunkSize; ++j) {
-        input[j] = (static_cast<float>(ReadInt16Le(wav)) +
-                    static_cast<float>(ReadInt16Le(wav))) / 65536.0f;
-    }
-    for(int j = 0; j < kChunkSize; j++)
-        data.push_back(input[j]);
-    }
-
-    return data;
-}
-
-// Read a little-endian signed 16-bit from a byte buffer at offset pos
-static inline int16_t ReadInt16Le(const std::string& buf, size_t pos) {
-    // buf[pos] is LSB, buf[pos+1] is MSB
-    return static_cast<int16_t>(
-        (uint8_t)buf[pos] | (uint8_t)buf[pos+1] << 8
-    );
-}
-
-/// Decode a WAV (16-bit PCM, stereo) stored in `wave_bytes` into
-/// a mono float vector.  Uses your chunk logic to cap total frames.
-inline std::vector<float> decodeWavToMonoFloats(const std::string& wave_bytes,
-                                         float sample_rate = 44100.0f)
-{
-    constexpr int kChunkSize = 512;  // number of frames per chunk
-    // total file bytes
-    size_t file_size = wave_bytes.size();
-    assert(file_size > 44 && "WAV too small for 44-byte header");
-
-    // compute approximate seconds of audio = (file_bytes-44)/(bytes/sec)
-    // bytes/sec = sample_rate * (2 bytes/sample) * 2 channels
-    float bytes_per_sec = sample_rate * 2 * 2;
-    float seconds = float(file_size - 44) / bytes_per_sec;
-
-    // how many chunks to read
-    int kNumChunks = int((sample_rate / kChunkSize) * seconds);
-
-    // reserve output
-    std::vector<float> data;
-    data.reserve(size_t(kNumChunks) * kChunkSize);
-
-    // data starts at offset 44
-    size_t pos = 44;
-    // each stereo frame = 4 bytes (2 bytes per channel)
-    const size_t frameBytes = 4;
-
-    for (int chunk = 0; chunk < kNumChunks; ++chunk) {
-        for (int j = 0; j < kChunkSize; ++j) {
-            assert(pos + frameBytes <= file_size && "Ran past end of buffer");
-            // read left & right
-            int16_t left  = ReadInt16Le(wave_bytes, pos);
-            int16_t right = ReadInt16Le(wave_bytes, pos + 2);
-            pos += frameBytes;
-            // average, normalize to [-1,1)
-            float mono = (float(left) + float(right)) * (1.0f / 65536.0f);
-            data.push_back(mono);
-        }
-    }
-
-    return data;
-}
 
 // Structure to hold audio data
 struct AudioData {
@@ -340,7 +259,7 @@ inline void carfac_reader_t::init(std::string file_path)
         delete pipeline;
         pipeline = 0;
     }
-    sample_data = read_wav(file_path);
+    sample_data = readWavFile(file_path);
     std::string notes_path = replaced(file_path, ".wav", ".csv");
     if(std::filesystem::exists(notes_path))
         active_notes.all_notes = read_notes(notes_path);

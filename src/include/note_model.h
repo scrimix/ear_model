@@ -81,7 +81,7 @@ public:
     carfac_reader.reset();
     carfac_reader.init(file_path);
     carfac_reader.set(params.sample_rate, params.buffer_size, params.loudness_coef);
-    audio.buffer = read_wav(file_path, params.sample_rate);
+    audio.buffer = readWavFile(file_path);
   }
 
   void load_audio(std::vector<float> const& wav)

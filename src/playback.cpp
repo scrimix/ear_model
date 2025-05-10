@@ -1,5 +1,5 @@
 #include "carfac_reader.h"
-
+#include "wav_reader.h"
 
 int main(int argc, char *argv[]) {
     if (SDL_Init(SDL_INIT_AUDIO) < 0) {
@@ -24,7 +24,10 @@ int main(int argc, char *argv[]) {
     carfac_reader.init(file_path);
     carfac_reader.set(sample_rate, buffer_size, loudness_coef);
 
-    AudioData audio = {read_wav(file_path, sample_rate)};
+    // auto audio_buffer = read_wav(file_path, sample_rate);
+    auto audio_buffer = readWavFile(file_path);
+
+    AudioData audio = {audio_buffer};
 
     // Set up audio specifications
     SDL_AudioSpec spec;
