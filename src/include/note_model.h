@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint> //uint8_t
 #include <iostream>
 #include <fstream>      // std::ofstream
 #include <vector>
@@ -76,7 +75,7 @@ public:
     clsr.initialize( /* alpha */ 0.001f);
   }
 
-  void load_audio_file(std::string file_path)
+  void load_audio_file_and_notes(std::string file_path)
   {
     carfac_reader.reset();
     carfac_reader.init(file_path);

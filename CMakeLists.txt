@@ -48,6 +48,7 @@ include_directories("src/include")
 include_directories("crow/include")
 
 include_directories("dr_libs")
+include_directories(${FLUIDSYNTH_INCLUDE_DIRS})
 
 add_subdirectory(midifile)
 
@@ -56,11 +57,10 @@ list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/crow")
 find_package(Crow REQUIRED)
 
 
-set(COMMON_LIBS carfac ${opencv_lib} ${SNDFILE_LIBRARIES} htm_core midifile asio::asio)
+set(COMMON_LIBS carfac ${opencv_lib} ${SNDFILE_LIBRARIES} ${FLUIDSYNTH_LIBRARIES} htm_core midifile asio::asio)
 
 add_executable(midi_gen src/midi_gen.cpp)
-target_include_directories(midi_gen PRIVATE ${FLUIDSYNTH_INCLUDE_DIRS})
-target_link_libraries(midi_gen ${FLUIDSYNTH_LIBRARIES})
+target_link_libraries(midi_gen ${COMMON_LIBS})
 
 add_executable(spectro src/spectro.cpp)
 target_include_directories(spectro PRIVATE ${FFTW3_INCLUDE_DIR})
@@ -74,6 +74,9 @@ target_link_libraries(mnist_train ${COMMON_LIBS})
 
 add_executable(notes_train src/notes_train.cpp)
 target_link_libraries(notes_train ${COMMON_LIBS})
+
+add_executable(midi_cvt src/midi_cvt.cpp)
+target_link_libraries(midi_cvt ${COMMON_LIBS})
 
 add_executable(app src/app.cpp)
 target_link_libraries(app ${COMMON_LIBS})

@@ -18,6 +18,7 @@
 #include <iostream>
 #include <random>
 #include <fstream>
+#include "midi_to_wav.h"
 
 using namespace std::literals;
 using pc_clock = std::chrono::high_resolution_clock;
@@ -81,12 +82,6 @@ schedule_timer_event(void)
     delete_fluid_event(ev);
 }
 
-struct note_event_t {
-    int midi_value = 0;
-    int64_t time_point = 0;
-    enum {UP, DOWN} pos = UP;
-};
- 
 /* schedule the arpeggio's notes */
 std::vector<note_event_t> schedule_pattern(int64_t time_marker)
 {
@@ -148,21 +143,6 @@ usage(char *prog_name)
            pattern_size);
     printf("\t(optional) duration: of the pattern in ticks, default %d\n",
            duration);
-}
-
-void save_notes(std::vector<note_event_t> note_events, std::string const& file_path)
-{
-    std::string notes[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
-    std::ofstream file(file_path);
-    for(auto& note : note_events){
-        auto octave = note.midi_value / 12 - 1;
-        auto note_name = notes[note.midi_value % 12];
-        file << note_name << octave << ",";
-        file << note.time_point << ",";
-        file << (note.pos == note_event_t::UP ? "UP" : "DOWN");
-        file << "\n";
-    }
-    file.close();
 }
 
 void generate_midi(std::string file_name = "rnd")
@@ -233,7 +213,7 @@ void generate_midi(std::string file_name = "rnd")
         std::cout << "time marker?? " << time_marker << std::endl;
 
         while (fluid_file_renderer_process_block(renderer) == FLUID_OK && fluid_sequencer_get_tick(sequencer) <= time_marker){
-            std::cout << "time tick " << fluid_sequencer_get_tick(sequencer) << std::endl;
+            // std::cout << "time tick " << fluid_sequencer_get_tick(sequencer) << std::endl;
             continue;
         }
     }

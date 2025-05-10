@@ -17,8 +17,8 @@ int main(int argc, char *argv[]) {
     // std::string file_path = "../../sound_data/rnd_single.wav";
     // auto loudness_coef = 70;
 
-    std::string file_path = "../../dataset/tests/arpegio_test_c6_c4.wav";
-    auto loudness_coef = 80;
+    std::string file_path = "../../dataset/tests/midi_test.wav";
+    auto loudness_coef = 20;
 
     carfac_reader_t carfac_reader;
     carfac_reader.init(file_path);
@@ -52,10 +52,7 @@ int main(int argc, char *argv[]) {
     while (audio.get_pos() < audio.total_bytes()) {
         while(audio.get_pos() - carfac_reader.get_render_pos() > 0){
             auto note_image = carfac_reader.next();
-            if(!note_image.midi.empty())
-                std::cout << "note? " << note_image.midi.front().to_midi_int() << std::endl;
-
-            draw_notes(note_image);
+            draw_notes_as_keys(note_image);
 
             // cv::resize(note_image.mat, note_image.mat, cv::Size(64,64));
             // cv::cvtColor(note_image.mat, note_image.mat, cv::COLOR_BGR2GRAY);

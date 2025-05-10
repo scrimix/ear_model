@@ -10,7 +10,7 @@ void train_notes(note_model_t& model)
   for(auto dir : dirs){
     for(auto file : list_wav_files(dir)){
       std::cout << "loading file: " << file << std::endl;
-      model.load_audio_file(file);
+      model.load_audio_file_and_notes(file);
       model.tm.reset();
       while(model.carfac_reader.get_render_pos() < model.audio.total_bytes()){
         auto note_image = model.carfac_reader.next();
@@ -43,7 +43,7 @@ void test_notes(note_model_t& model)
   model.load("carfac_test");
   for(auto file : list_wav_files("../../dataset/train2")){
     std::cout << "loading file: " << file << std::endl;
-    model.load_audio_file(file);
+    model.load_audio_file_and_notes(file);
     model.tm.reset();
     while(model.carfac_reader.get_render_pos() < model.audio.total_bytes()){
       auto note_image = model.carfac_reader.next();

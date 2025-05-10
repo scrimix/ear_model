@@ -336,6 +336,62 @@ inline void draw_notes(note_image_t& note_image, int y_pos = 30)
     }
 }
 
+inline cv::Scalar color_based_on_pitch(str_note_event_t const& note)
+{
+    int pitch_class = note.to_midi_int() % 12;
+    cv::Scalar color;
+    switch(pitch_class) {
+        case 0: color = cv::Scalar(0, 0, 255); break;  // C -> Red
+        case 1: color = cv::Scalar(0, 255, 0); break;  // C# -> Green
+        case 2: color = cv::Scalar(255, 0, 0); break;  // D -> Blue
+        case 3: color = cv::Scalar(0, 255, 255); break;  // D# -> Cyan
+        case 4: color = cv::Scalar(255, 255, 0); break;  // E -> Yellow
+        case 5: color = cv::Scalar(255, 0, 255); break;  // F -> Magenta
+        case 6: color = cv::Scalar(0, 255, 255); break;  // F# -> Cyan
+        case 7: color = cv::Scalar(255, 255, 255); break;  // G -> White
+        case 8: color = cv::Scalar(128, 128, 128); break;  // G# -> Grey
+        case 9: color = cv::Scalar(255, 128, 128); break;  // A -> Light Red
+        case 10: color = cv::Scalar(128, 255, 128); break; // A# -> Light Green
+        case 11: color = cv::Scalar(128, 128, 255); break; // B -> Light Blue
+    }
+    return color;
+}
+
+// Function to map a MIDI note to a color based on pitch class using HSV
+inline cv::Scalar getColorForPitch(int midiNote) {
+    // Map MIDI note to pitch class (mod 12)
+    int pitchClass = midiNote % 12;
+
+    // Map pitch class to hue (0-11 map to 0-180 in OpenCV HSV space)
+    double hue = (pitchClass / 12.0) * 180.0;  // 0-11 -> 0-180 for OpenCV HSV
+    double saturation = 255;  // Full saturation for vibrant colors
+    double value = 255;  // Full brightness
+
+    // Convert HSV to BGR
+    cv::Mat hsv(1, 1, CV_8UC3, cv::Scalar(hue, saturation, value));
+    cv::Mat bgr;
+    cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+
+    return cv::Scalar(bgr.at<cv::Vec3b>(0, 0)[0], bgr.at<cv::Vec3b>(0, 0)[1], bgr.at<cv::Vec3b>(0, 0)[2]);
+}
+
+inline void draw_notes_as_keys(note_image_t& note_image, int y_pos = 30)
+{
+    cv::Point p(5, y_pos);
+    auto image_width = note_image.mat.cols;
+    auto key_width = 8;
+    auto midi_count = 100;
+    auto step = image_width / double(key_width) / midi_count;
+    
+    for(auto note : note_image.midi){
+        auto color = getColorForPitch(note.to_midi_int());
+        p.x = note.to_midi_int() * step * key_width;
+        auto black_key_offset = (note.note_name.size() > 2 ? -5 : 0);
+        cv::putText(note_image.mat, note.note_name, p - cv::Point(9, -15 + black_key_offset), cv::FONT_HERSHEY_PLAIN, 1.2, color, 2);
+        cv::rectangle(note_image.mat, cv::Rect(p.x+2, y_pos - 15 + black_key_offset, key_width-2, 15), color, -1);
+    }
+}
+
 inline void carfac_reader_t::reset()
 {
     render_pos = 0;

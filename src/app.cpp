@@ -1,4 +1,5 @@
 #include "wav_to_midi.h"
+#include "midi_to_wav.h"
 
 #define CROW_JSON_USE_MAP
 #include "crow.h"
@@ -50,6 +51,8 @@ struct runner_t
     note_model_params_t params;
     note_model_t model;
     av_packet_t last_packet;
+    
+    uint prev_pred = 0;
 
     runner_t()
     {
@@ -70,6 +73,13 @@ struct runner_t
         labeler.reset();
     }
 
+    void load_midi(std::string file_path)
+    {
+        model.load_audio_file_and_notes(file_path+".wav");
+        model.tm.reset();
+        labeler.reset();
+    }
+
     bool is_finished() const { return model.carfac_reader.get_render_pos() >= model.audio.total_bytes(); }
     float progress() const { return std::min(100.f, model.carfac_reader.get_render_pos() / float(model.audio.total_bytes()) * 100); }
 
@@ -80,11 +90,14 @@ struct runner_t
         result.tm = sdr3DToColorMap(model.outTM);
         result.input = preproc_input;
     
-        draw_notes(note_image);
-            if(pred_midi > 0){
-            note_image.midi.clear();
-            note_image.midi.push_back(str_note_event_t::from_int(pred_midi));
-            draw_notes(note_image, note_image.mat.rows - 30);
+        draw_notes_as_keys(note_image);
+        if(pred_midi > 0){
+            if(prev_pred == pred_midi){
+                note_image.midi.clear();
+                note_image.midi.push_back(str_note_event_t::from_int(pred_midi));
+                draw_notes_as_keys(note_image, note_image.mat.rows - 30);
+            }
+            prev_pred = pred_midi;
         }
         result.carfac = note_image.mat;
         result.wav = note_image.wav_chunk;
@@ -224,7 +237,6 @@ void run_web_app() {
             res.write("Expected WAV body");
             return res.end();
         }
-
         auto wav = readWavBuffer(req.body);
         runner.load_audio(wav);
         while(!runner.is_finished()){
@@ -244,12 +256,23 @@ void run_web_app() {
     std::atomic_int64_t packet_counter = 0;
     const int buffering_packets = 20;
     std::thread demo;
+    smf::MidiFile midi_file;
+    std::atomic_bool is_midi_demo = false;
 
     CROW_ROUTE(app, "/demo")
         .methods("POST"_method)
     ([&](const crow::request& req, crow::response& res){
         auto ct = req.get_header_value("Content-Type");
-        if (ct != "audio/wav" && ct != "audio/x-wav" && ct != "application/octet-stream") {
+        
+        is_midi_demo = (ct == "audio/midi" || ct == "audio/mid");
+        if(is_midi_demo){
+            std::cout << "GOT MIDI FILE! " << req.body.size() << std::endl;
+            midi_file.clear();
+            read_midi_from_buffer(midi_file, req.body);
+            create_wav_and_labels(midi_file, ".", "midi_demo");
+        }
+
+        if (!is_midi_demo && ct != "audio/wav" && ct != "audio/x-wav" && ct != "application/octet-stream") {
             res.code = 415;
             res.write("Expected WAV body");
             return res.end();
@@ -261,11 +284,13 @@ void run_web_app() {
         }
         stop_demo = false;
         demo = std::thread([&, data = req.body]{
-            auto wav = readWavBuffer(req.body);
-            runner.load_audio(wav);
+            if(!is_midi_demo)
+                runner.load_audio(readWavBuffer(data));
+            else
+                runner.load_midi("./midi_demo");
             demo_paused = false;
             packet_counter = 0;
-            messenger.send_song(wav);
+            messenger.send_song(runner.model.audio.buffer);
             while(!stop_demo && !runner.is_finished()){
                 runner.step(true);
                 messenger.send_packet(runner.last_packet);
