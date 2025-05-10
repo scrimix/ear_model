@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoLynx Project</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+    }
+
+    h1 {
+      margin-top: 40px;
+      font-size: 2rem;
+      color: #333;
+    }
+
+    .modes {
+      margin: 20px 0;
+    }
+
+    .modes label {
+      margin: 0 10px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    .drop-zone {
+      width: 300px;
+      height: 200px;
+      border: 2px dashed #bbb;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #999;
+      font-size: 1rem;
+      margin-bottom: 20px;
+      background-color: #fff;
+      transition: background-color 0.3s;
+    }
+
+    .drop-zone.dragover {
+      background-color: #eef;
+    }
+
+    #actionBtn {
+      padding: 12px 24px;
+      font-size: 1.1rem;
+      border: none;
+      border-radius: 6px;
+      background-color: #007bff;
+      color: #fff;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      position: relative;
+    }
+
+    #actionBtn:hover {
+      background-color: #0056b3;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* Loader spinner */
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #007bff;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      margin-right: 10px;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress-container {
+      display: flex;
+      align-items: center;
+      margin-top: 15px;
+      font-size: 1rem;
+      color: #333;
+    }
+
+    .main-img {
+      /* width: 450px; */
+      /* height: 450px; */
+
+      display: block;
+      /* remove inline whitespace quirks */
+      max-width: 100%;
+      /* never exceed its container’s width */
+      height: 450px;
+      /* auto‐scale height to preserve the ratio */
+      object-fit: contain;
+      /* if you also set width/height on the container */
+    }
+
+    .side-img {
+      width: 145px;
+      height: 145px;
+      padding: 0px;
+      margin: 0px;
+    }
+
+    .side-img-container {
+      justify-content: space-between;
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>EchoLynx Project</h1>
+  <div class="modes">
+    <label><input type="radio" name="mode" value="wav-to-midi" checked> WAV to MIDI</label>
+    <label><input type="radio" name="mode" value="midi-to-wav"> MIDI to WAV</label>
+    <label><input type="radio" name="mode" value="demo"> Demo</label>
+  </div>
+  <div class="drop-zone" id="dropZone">Drop file here</div>
+  <input type="file" id="fileInput">
+  <div class="demo-zone" id="demoZone" style="display: none; margin: 10px;">
+    <img id="carfac-img" class="main-img" />
+    <div id="side-imgs" class="side-img-container">
+      <img id="input-img" class="side-img" />
+      <img id="columns-img" class="side-img" />
+      <img id="tm-img" class="side-img" />
+    </div>
+  </div>
+  <button id="actionBtn">Convert</button>
+  <div id="progress" class="progress-container" style="display:none;">
+    <div class="loader"></div>
+    <div id="progressText">Progress: 0%</div>
+  </div>
+</body>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const demoZone = document.getElementById('demoZone');
+  const fileInput = document.getElementById('fileInput');
+  const actionBtn = document.getElementById('actionBtn');
+  const progressEl = document.getElementById('progress');
+  const progressText = document.getElementById('progressText');
+  let selectedFile = null;
+
+  const ws = new WebSocket("ws://localhost:8080/ws");
+  ws.binaryType = "arraybuffer";
+
+  const sampleRate = 44100;
+  const numChannels = 1;
+  let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let newestImageTime = 0;
+  let groundZeroTime = 0;
+  let currBuffer = null;
+  var packet_reqester = null;
+  const image_packets = [];
+  let audio = null;
+  let audio_started = false;
+  var packets_paused = false;
+  var demo_is_done = true;
+
+  function updateButton() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    actionBtn.textContent = mode === 'demo' ? 'Start Demo' : 'Convert';
+  }
+  document.querySelectorAll('input[name="mode"]').forEach(radio => {
+    radio.addEventListener('change', updateButton);
+  });
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault(); dropZone.classList.add('dragover');
+  });
+  dropZone.addEventListener('dragleave', e => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length) {
+      selectedFile = files[0];
+      dropZone.textContent = selectedFile.name;
+    }
+  });
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+      selectedFile = fileInput.files[0];
+      dropZone.textContent = selectedFile.name;
+    }
+  });
+
+  actionBtn.addEventListener('click', async () => {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    if (mode === 'demo') {
+      if (actionBtn.textContent == "Pause") {
+        actionBtn.textContent = "Start";
+        await audioCtx.suspend();
+        return;
+      }
+      if (actionBtn.textContent == "Start") {
+        ws.send(JSON.stringify({ "type": "demo_state", "value": "continue" }));
+        await audioCtx.resume();
+        actionBtn.textContent = "Pause";
+        return;
+      }
+      console.log('Starting demo...');
+      demoZone.style.display = "flex";
+      dropZone.style.display = "none";
+      actionBtn.textContent = "Pause";
+      newestImageTime = 0;
+      packet_reqester = setInterval(update_playback, 10);
+      audio_started = false;
+      demo_is_done = false;
+    }
+    if (!selectedFile) { alert('Please select a file first'); return; }
+
+    progressEl.style.display = 'flex';
+    progressText.textContent = 'Progress: 0%';
+
+    try {
+      const response = await fetch('/' + mode, {
+        method: 'POST',
+        body: selectedFile,
+        headers: { 'Content-Type': selectedFile.type }
+      });
+      if (!response.ok) throw new Error(response.statusText);
+
+      if (mode != "demo") {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = mode === 'wav-to-midi' ? 'output.mid' : 'output.wav';
+        document.body.appendChild(a);
+        a.click(); a.remove(); URL.revokeObjectURL(url);
+      }
+
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      progressEl.style.display = 'none';
+    }
+  });
+
+  updateButton();
+
+
+  async function update_playback() {
+    if (demo_is_done) {
+      if (!audio || !audioCtx || audioCtx.currentTime >= audio.duration) {
+        console.log("done!");
+        demoZone.style.display = "none";
+        dropZone.style.display = "flex";
+        actionBtn.textContent = "Start Demo";
+        clearInterval(packet_reqester);
+        audioCtx.close();
+        audioCtx = null;
+        audio = null;
+        image_packets.length = 0;
+        groundZeroTime = 0;
+        newestImageTime = 0;
+        return;
+      }
+    }
+
+    // waiting for first second of images to buffer
+    if (!audioCtx && newestImageTime < 1) {
+      if (packets_paused) {
+        ws.send(JSON.stringify({ "type": "demo_state", "value": "continue" }));
+        packets_paused = false;
+      }
+      return;
+    }
+
+    if (!audio_started) {
+      const reader = new FileReader();
+      reader.onload = async evt => {
+        const data = evt.target.result;
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+          const buf = await audioCtx.decodeAudioData(data);
+          const src = audioCtx.createBufferSource();
+          src.buffer = buf;
+          src.connect(audioCtx.destination);
+          src.start();
+          groundZeroTime = audioCtx.currentTime;
+        } catch (err) {
+          console.error(err);
+        }
+      };
+      reader.readAsArrayBuffer(selectedFile);
+      audio_started = true;
+    }
+
+    if (packets_paused && newestImageTime - (audioCtx.currentTime - groundZeroTime) < 0.5) {
+      ws.send(JSON.stringify({ "type": "demo_state", "value": "continue" }));
+      packets_paused = false;
+    }
+
+    while (image_packets.length > 0 && image_packets[0].value.ts < (audioCtx.currentTime - groundZeroTime)) {
+      // Update images
+      const msg = image_packets.shift();
+      document.getElementById('carfac-img').src = `data:image/jpeg;base64,${msg.value.carfac}`;
+      document.getElementById('input-img').src = `data:image/jpeg;base64,${msg.value.input}`;
+      document.getElementById('columns-img').src = `data:image/jpeg;base64,${msg.value.columns}`;
+      document.getElementById('tm-img').src = `data:image/jpeg;base64,${msg.value.tm}`;
+    }
+  }
+
+
+  ws.onopen = () => {
+    console.log("WS open");
+    ws.send("Hi!");
+  }
+  ws.onclose = () => console.log("WS closed");
+
+  ws.onmessage = evt => {
+    if (evt.data instanceof ArrayBuffer) {
+      // // Audio chunk
+      // const samples = new Float32Array(evt.data);
+      // const frameCount = samples.length;
+      // const buf = audioCtx.createBuffer(1, frameCount, sampleRate);
+      // buf.copyToChannel(samples, 0);
+      // audio = buf;
+
+      // const src = audioCtx.createBufferSource(); // create a new source for this chunk
+      // src.buffer = audio;
+      // src.connect(audioCtx.destination);
+      // src.start();
+      // audio_started = true;
+    }
+    else {
+      const msg = JSON.parse(evt.data);
+
+      if (msg.type == "progress") {
+        const progressText = document.getElementById('progressText');
+        const pct = msg.value.toFixed(1);
+        progressText.textContent = `Progress: ${pct}%`;
+      }
+
+      if (msg.type == "avpacket") {
+        image_packets.push(msg);
+        newestImageTime = msg.value.ts;
+      }
+
+      if (msg.type == "demo_state") {
+        if (msg.value == "paused") {
+          console.log("demo paused");
+          packets_paused = true;
+        }
+        if (msg.value == "ended") {
+          console.log("demo ended");
+          demo_is_done = true;
+        }
+      }
+    }
+  };
+</script>
+
+</html>

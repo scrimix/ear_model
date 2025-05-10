@@ -75,5 +75,5 @@ target_link_libraries(mnist_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_cor
 add_executable(notes_train src/notes_train.cpp)
 target_link_libraries(notes_train ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core)
 
-add_executable(wav_to_midi src/wav_to_midi.cpp)
-target_link_libraries(wav_to_midi ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core midifile asio::asio)
+add_executable(app src/app.cpp)
+target_link_libraries(app ${SDL2_LIBRARIES} carfac ${opencv_lib} htm_core midifile asio::asio)

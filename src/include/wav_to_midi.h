@@ -107,6 +107,12 @@ public:
 
         return resulting_notes;
     }
+
+    void reset()
+    {
+        current_index = 0;
+        all_midi_events.clear();
+    }
 };
 
 inline std::vector<midi_event_t> detect_notes(note_model_t& model, midi_labeler_t& labeler, std::vector<float> const& wav)
@@ -126,8 +132,8 @@ inline std::vector<midi_event_t> detect_notes(note_model_t& model, midi_labeler_
       else
         labeler.skip();
 
-      model.visualize(note_image, img, pred_midi);
-      cv::waitKey(100);
+    //   model.visualize(note_image, img, pred_midi);
+    //   cv::waitKey(100);
     }
 
     return labeler.get_stable_notes();
@@ -155,4 +161,20 @@ inline std::vector<uchar> note_events_to_midi_file(std::vector<midi_event_t> con
     midifile.write(vec_writer);
 
     return result;
+}
+
+inline std::vector<uchar> convert_wav_to_midi(std::vector<float> const& wav)
+{
+    midi_labeler_t labeler;
+    note_model_params_t params;
+    params.models_path = "../../models/carfac_latest";
+
+    note_model_t model;
+    model.setup(params);
+    model.load();
+
+    auto notes = detect_notes(model, labeler, wav);
+    auto midi_file = note_events_to_midi_file(notes);
+
+    return midi_file;
 }

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Drag-&-Drop Audio Test</title>
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+            background: #fafafa;
+        }
+
+        #dropZone {
+            width: 400px;
+            height: 200px;
+            border: 3px dashed #888;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #dropZone.dragover {
+            background: #eef;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="dropZone">Drop audio file here</div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        let audioCtx = null;
+
+        dropZone.addEventListener('dragover', e => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', e => {
+            dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+            dropZone.textContent = `Playing: ${file.name}`;
+
+            // read as ArrayBuffer
+            const reader = new FileReader();
+            reader.onload = async evt => {
+                const data = evt.target.result;
+
+                // (re)create AudioContext if needed
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+                // decode & play
+                try {
+                    const buf = await audioCtx.decodeAudioData(data);
+                    const src = audioCtx.createBufferSource();
+                    src.buffer = buf;
+                    src.connect(audioCtx.destination);
+                    src.start();
+                } catch (err) {
+                    console.error(err);
+                    dropZone.textContent = 'Error decoding audio';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    </script>
+</body>
+
+</html>

@@ -293,3 +293,20 @@ inline std::vector<char> mat_to_vector(cv::Mat img)
   std::memcpy(buf.data(), img.data, nBytes);
   return buf;
 }
+
+inline std::string read_text_file(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) throw std::runtime_error("Unable to open " + path);
+
+  // find length
+  in.seekg(0, std::ios::end);
+  std::streamsize size = in.tellg();
+  in.seekg(0, std::ios::beg);
+
+  // read it all
+  std::string buf(size, '\0');
+  if (!in.read(&buf[0], size))
+      throw std::runtime_error("Error reading " + path);
+
+  return buf;
+}

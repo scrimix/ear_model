@@ -116,7 +116,7 @@ struct AudioData {
     int get_pos(){  std::lock_guard lock(pos_mut); return play_pos; }
     void inc_pos(int by) { std::lock_guard lock(pos_mut); play_pos += by; }
     
-    int64_t total_bytes() { return buffer.size() * sizeof(float); }
+    int64_t total_bytes() const { return buffer.size() * sizeof(float); }
 };
 
 // Audio callback function
@@ -296,6 +296,7 @@ public:
 struct note_image_t {
     cv::Mat mat;
     std::vector<str_note_event_t> midi;
+    std::vector<float> wav_chunk;
     int64_t midi_ts = 0;
     bool is_valid() const { return !mat.empty(); }
 };
@@ -371,6 +372,7 @@ inline note_image_t carfac_reader_t::next()
 {
     float input[buffer_size];
     auto bytes_to_copy = buffer_size * sizeof(float);
+
     std::memcpy(input, (uint8_t*)sample_data.data() + render_pos, bytes_to_copy);
     for(auto i = 0; i < buffer_size; i++)
         input[i] /= loudness_coef; // adjusting volume for algorithms
@@ -387,6 +389,7 @@ inline note_image_t carfac_reader_t::next()
     note_image_t result;
     result.mat = rot_mat;
     result.midi = active_notes.get();
+    result.wav_chunk.assign(input, input + buffer_size);
 
     // advance bytes rendered
     render_pos += bytes_to_copy;
