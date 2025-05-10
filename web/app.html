@@ -130,15 +130,97 @@
       flex-direction: column;
       margin-left: 10px;
     }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f4f4f4;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .slider-container {
+      width: 300px;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    .slider-container h2 {
+      margin-bottom: 10px;
+    }
+
+    .gain-display {
+      font-size: 1.5rem;
+      margin: 10px 0;
+      color: #007bff;
+    }
+
+    .slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 8px;
+      background: #ddd;
+      border-radius: 4px;
+      outline: none;
+      transition: background 0.3s;
+    }
+
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      background: #007bff;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .slider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      background: #007bff;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .gain-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      /* space between label, slider, and value */
+      width: 100%;
+      max-width: 400px;
+      margin: 20px auto;
+    }
+
+    .gain-slider-row label {
+      white-space: nowrap;
+      font-weight: bold;
+    }
+
+    .gain-slider-row input[type="range"] {
+      flex-grow: 1;
+      /* make slider take all available space */
+    }
+
+    .gain-slider-row span {
+      min-width: 40px;
+      text-align: right;
+    }
   </style>
 </head>
 
 <body>
   <h1>EchoLynx Project</h1>
   <div class="modes">
-    <label><input type="radio" name="mode" value="wav-to-midi" checked> WAV to MIDI</label>
+    <label><input type="radio" name="mode" value="wav-to-midi"> WAV to MIDI</label>
     <label><input type="radio" name="mode" value="midi-to-wav"> MIDI to WAV</label>
-    <label><input type="radio" name="mode" value="demo"> Demo</label>
+    <label><input type="radio" name="mode" value="demo" checked> Demo</label>
   </div>
   <div class="drop-zone" id="dropZone">Drop file here</div>
   <input type="file" id="fileInput">
@@ -151,6 +233,13 @@
     </div>
   </div>
   <button id="actionBtn">Convert</button>
+  <div id="gainBox" style="display:none">
+    <div class="gain-slider-row">
+      <label for="gainSlider">Gain:</label>
+      <input type="range" id="gainSlider" min="0" max="5" step="0.1" value="1.0">
+      <span id="gainValue">1.0</span>
+    </div>
+  </div>
   <div id="progress" class="progress-container" style="display:none;">
     <div class="loader"></div>
     <div id="progressText">Progress: 0%</div>
@@ -164,6 +253,8 @@
   const actionBtn = document.getElementById('actionBtn');
   const progressEl = document.getElementById('progress');
   const progressText = document.getElementById('progressText');
+  const gainBox = document.getElementById('gainBox');
+  const gainSlider = document.getElementById('gainSlider');
   let selectedFile = null;
 
   const ws = new WebSocket("ws://localhost:8080/ws");
@@ -182,9 +273,21 @@
   var packets_paused = false;
   var demo_is_done = true;
 
+  function updateGainView() {
+    const file_is_midi = selectedFile != null && (selectedFile.type == "audio/midi" || selectedFile.type == "audio/mid");
+    if (actionBtn.textContent === 'Start Demo' && file_is_midi)
+      gainBox.style.display = "inline-block";
+    else
+      gainBox.style.display = "none";
+  }
+  gainSlider.addEventListener('input', () => {
+    document.getElementById('gainValue').textContent = gainSlider.value;
+  });
+
   function updateButton() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     actionBtn.textContent = mode === 'demo' ? 'Start Demo' : 'Convert';
+    updateGainView();
   }
   document.querySelectorAll('input[name="mode"]').forEach(radio => {
     radio.addEventListener('change', updateButton);
@@ -200,6 +303,7 @@
     if (files.length) {
       selectedFile = files[0];
       dropZone.textContent = selectedFile.name;
+      updateGainView();
     }
   });
   dropZone.addEventListener('click', () => fileInput.click());
@@ -232,6 +336,7 @@
       packet_reqester = setInterval(update_playback, 10);
       audio_started = false;
       demo_is_done = false;
+      updateGainView();
     }
     if (!selectedFile) { alert('Please select a file first'); return; }
 
@@ -242,7 +347,7 @@
       const response = await fetch('/' + mode, {
         method: 'POST',
         body: selectedFile,
-        headers: { 'Content-Type': selectedFile.type }
+        headers: { 'Content-Type': selectedFile.type, 'audio-gain': gainSlider.value }
       });
       if (!response.ok) throw new Error(response.statusText);
 
@@ -280,6 +385,7 @@
         image_packets.length = 0;
         groundZeroTime = 0;
         newestImageTime = 0;
+        updateGainView();
         return;
       }
     }
@@ -297,23 +403,6 @@
     }
 
     if (!audio_started) {
-      // const reader = new FileReader();
-      // reader.onload = async evt => {
-      //   const data = evt.target.result;
-      //   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      //   try {
-      //     const buf = await audioCtx.decodeAudioData(data);
-      //     const src = audioCtx.createBufferSource();
-      //     src.buffer = buf;
-      //     src.connect(audioCtx.destination);
-      //     src.start();
-      //     groundZeroTime = audioCtx.currentTime;
-      //   } catch (err) {
-      //     console.error(err);
-      //   }
-      // };
-      // reader.readAsArrayBuffer(selectedFile);
-
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       try {
         const src = audioCtx.createBufferSource();

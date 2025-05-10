@@ -67,7 +67,7 @@ inline void read_midi_from_buffer(smf::MidiFile& midi_file, std::string const& b
     midi_file.linkNotePairs();
 }
 
-inline void create_wav_and_labels(smf::MidiFile& midi_file, std::string dir, std::string file_name)
+inline void create_wav_and_labels(smf::MidiFile& midi_file, std::string dir, std::string file_name, float gain)
 {
     std::string sound_font_path = "../../sound_fonts/Steinway-Chateau-Plus-Instruments-v1.7.sf2";
 
@@ -78,7 +78,7 @@ inline void create_wav_and_labels(smf::MidiFile& midi_file, std::string dir, std
     fluid_settings_setstr(settings, "player.timing-source", "sample");
     // since this is a non-realtime scenario, there is no need to pin the sample data
     fluid_settings_setint(settings, "synth.lock-memory", 0);
-    fluid_settings_setnum(settings, "synth.gain", 5);
+    fluid_settings_setnum(settings, "synth.gain", gain);
 
     fluid_synth_ctx_t ctx;
    

@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     midi_file.doTimeAnalysis();
     midi_file.linkNotePairs();
 
-    create_wav_and_labels(midi_file, ".", "midi_test");
+    create_wav_and_labels(midi_file, ".", "midi_test", 2);
 
     return 0;
 }

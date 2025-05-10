@@ -266,10 +266,13 @@ void run_web_app() {
         
         is_midi_demo = (ct == "audio/midi" || ct == "audio/mid");
         if(is_midi_demo){
-            std::cout << "GOT MIDI FILE! " << req.body.size() << std::endl;
+            auto gain = 2.f;
+            if(req.headers.contains("audio-gain"))
+                gain = std::stof(req.headers.find("audio-gain")->second);
+            std::cout << "GOT MIDI FILE! " << req.body.size() << " " << gain << std::endl;
             midi_file.clear();
             read_midi_from_buffer(midi_file, req.body);
-            create_wav_and_labels(midi_file, ".", "midi_demo");
+            create_wav_and_labels(midi_file, ".", "midi_demo", gain);
         }
 
         if (!is_midi_demo && ct != "audio/wav" && ct != "audio/x-wav" && ct != "application/octet-stream") {
@@ -284,6 +287,7 @@ void run_web_app() {
         }
         stop_demo = false;
         demo = std::thread([&, data = req.body]{
+            std::cout << "dafeq? " << std::endl;
             if(!is_midi_demo)
                 runner.load_audio(readWavBuffer(data));
             else
