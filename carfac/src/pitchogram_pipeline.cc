@@ -63,6 +63,13 @@ PitchogramPipeline::PitchogramPipeline(float sample_rate_hz,
   std::fill(data, data + image_.num_pixels(), background);
 }
 
+void PitchogramPipeline::ProcessJustSamples(const float* samples, int num_samples) {
+  auto input_map = ArrayXX::Map(samples, kNumEars, num_samples / kNumEars);
+  carfac_->RunSegment(input_map, false /* open_loop */,
+                      carfac_output_buffer_.get());
+  sai_->RunSegment(carfac_output_buffer_->nap()[0], &sai_output_buffer_);
+}
+
 void PitchogramPipeline::ProcessSamples(const float* samples, int num_samples) {
   auto input_map = ArrayXX::Map(samples, kNumEars, num_samples / kNumEars);
   carfac_->RunSegment(input_map, false /* open_loop */,

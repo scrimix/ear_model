@@ -224,17 +224,18 @@ class carfac_reader_t {
 public:
     void init(std::string file_path);
     void init(std::vector<float> const& wav);
-    void set(int sample_rate, int buffer_size, int loudness_coef);
+    void set(int sample_rate, int buffer_size, float loudness_coef);
     int64_t get_render_pos() const;
     note_image_t next();
     void reset();
     int64_t total_note_count() const;
+    void clear_all_notes();
 
 private:
 
     int sample_rate = 44100;
     int buffer_size = 1024;
-    int loudness_coef = 70;
+    float loudness_coef = 0.1;
     int64_t render_pos = 0;
     std::vector<float> sample_data;
     active_notes_t active_notes;
@@ -246,11 +247,17 @@ inline int64_t carfac_reader_t::total_note_count() const
     return active_notes.all_notes.size();
 }
 
-inline void carfac_reader_t::set(int sample_rate_arg, int buffer_size_arg, int loudness_coef_arg)
+inline void carfac_reader_t::set(int sample_rate_arg, int buffer_size_arg, float loudness_coef_arg)
 {
     sample_rate = sample_rate_arg;
     buffer_size = buffer_size_arg;
     loudness_coef = loudness_coef_arg;
+}
+
+inline void carfac_reader_t::clear_all_notes()
+{
+    reset();
+    active_notes.all_notes.clear();
 }
 
 inline void carfac_reader_t::init(std::string file_path)
@@ -294,8 +301,9 @@ inline note_image_t carfac_reader_t::next()
 
     std::memcpy(input, (uint8_t*)sample_data.data() + render_pos, bytes_to_copy);
     for(auto i = 0; i < buffer_size; i++)
-        input[i] /= loudness_coef; // adjusting volume for algorithms
-    pipeline->ProcessSamples(input, buffer_size);
+        input[i] *= loudness_coef; // adjusting volume for algorithms
+
+    pipeline->ProcessJustSamples(input, buffer_size);
     auto& nap = pipeline->sai_output().transpose().eval();
     // auto& nap = pipeline.carfac_output().nap()[0].transpose().eval();
     cv::Mat mat(nap.rows(), nap.cols(), CV_32F, (void*)nap.data());
@@ -380,12 +388,12 @@ inline void draw_notes_as_keys(note_image_t& note_image, int y_pos = 30)
     cv::Point p(5, y_pos);
     auto image_width = note_image.mat.cols;
     auto key_width = 8;
-    auto midi_count = 100;
-    auto step = image_width / double(key_width) / midi_count;
-    
+    auto midi_start = 21;
+    auto midi_end = 108;
+    auto step = image_width / double(key_width) / (midi_end - midi_start);
     for(auto note : note_image.midi){
         auto color = getColorForPitch(note.to_midi_int());
-        p.x = note.to_midi_int() * step * key_width;
+        p.x = (note.to_midi_int() - midi_start) * step * key_width;
         auto black_key_offset = (note.note_name.size() > 2 ? -5 : 0);
         cv::putText(note_image.mat, note.note_name, p - cv::Point(9, -15 + black_key_offset), cv::FONT_HERSHEY_PLAIN, 1.2, color, 2);
         cv::rectangle(note_image.mat, cv::Rect(p.x+2, y_pos - 15 + black_key_offset, key_width-2, 15), color, -1);

@@ -36,9 +36,6 @@ struct av_packet_t
     std::string to_wav_string() const
     {
         auto audio = wav;
-        // I think values in this system are in range of 0:1, we need -1:+1
-        for(auto& frame : audio)
-            frame = std::clamp(frame * 2.0f - 1.0f, -1.0f, 1.0f);
         std::string audio_bin;
         audio_bin.assign(reinterpret_cast<const char*>(audio.data()), audio.size() * sizeof(float));
         return audio_bin;
@@ -61,7 +58,8 @@ struct runner_t
 
     void load_model()
     {
-        params.models_path = "../../models/carfac_latest";
+        // params.models_path = "../../models/carfac_latest";
+        params.models_path = "../../stable_models/fenrir/fenrir";
         model.setup(params);
         model.load();
     }
@@ -116,14 +114,22 @@ struct runner_t
         auto labels = midi_to_labels(note_image.midi);
         model.feedforward(img, false);
         auto pdf = model.clsr.infer(model.outTM);
-        auto pred_midi = argmax(pdf);
-        if(pred_midi > 0)
+        auto preds = note_model_t::get_labels(pdf, 0.3);
+        auto pred_midi = preds.empty() ? 0 : preds.at(0);
+        if(!preds.empty())
             labeler.add_new(pred_midi, note_image.midi_ts);
         else
             labeler.skip();
 
         if(with_av_packet)
             last_packet = get_packet(note_image, img, pred_midi);
+    }
+
+    void reset()
+    {
+        model.carfac_reader.reset();
+        model.tm.reset();
+        labeler.reset();
     }
 };
 
@@ -269,7 +275,7 @@ void run_web_app() {
             auto gain = 2.f;
             if(req.headers.contains("audio-gain"))
                 gain = std::stof(req.headers.find("audio-gain")->second);
-            std::cout << "GOT MIDI FILE! " << req.body.size() << " " << gain << std::endl;
+            std::cout << "GOT MIDI FILE! " << req.body.size() << " gain: " << gain << std::endl;
             midi_file.clear();
             read_midi_from_buffer(midi_file, req.body);
             create_wav_and_labels(midi_file, ".", "midi_demo", gain);
@@ -287,7 +293,7 @@ void run_web_app() {
         }
         stop_demo = false;
         demo = std::thread([&, data = req.body]{
-            std::cout << "dafeq? " << std::endl;
+            runner.reset();
             if(!is_midi_demo)
                 runner.load_audio(readWavBuffer(data));
             else

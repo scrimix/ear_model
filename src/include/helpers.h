@@ -38,14 +38,15 @@ struct TestParams {
 
 inline std::string PrintToString(const TestParams& params) { return params.name(); }
 
-inline std::vector<fs::path> list_wav_files(const fs::path& directory) {
-    std::vector<fs::path> wav_files;
+
+inline std::vector<fs::path> list_audio_files(const fs::path& directory) {
+    std::vector<fs::path> audio_files;
 
     if (!fs::exists(directory) || !fs::is_directory(directory)) {
-        return wav_files; // empty if invalid directory
+        return audio_files; // return empty if invalid directory
     }
 
-    for (const auto& entry : fs::directory_iterator(directory)) {
+    for (const auto& entry : fs::recursive_directory_iterator(directory)) {
         if (!entry.is_regular_file())
             continue;
 
@@ -54,12 +55,12 @@ inline std::vector<fs::path> list_wav_files(const fs::path& directory) {
             return static_cast<char>(std::tolower(c));
         });
 
-        if (ext == ".wav") {
-            wav_files.push_back(entry.path());
+        if (ext == ".wav" || ext == ".midi" || ext == ".mid") {
+            audio_files.push_back(entry.path());
         }
     }
 
-    return wav_files;
+    return audio_files;
 }
 
 // for string delimiter
@@ -160,3 +161,35 @@ inline std::string read_text_file(const std::string& path) {
 
   return buf;
 }
+
+// Return indices of top-n largest elements in a vector
+inline std::vector<size_t> topNIndices(const std::vector<double>& values, size_t n) {
+    // Min-heap to store the top n elements (value, index)
+    using Pair = std::pair<float, size_t>;
+    auto cmp = [](const Pair& a, const Pair& b) { return a.first > b.first; };
+    std::priority_queue<Pair, std::vector<Pair>, decltype(cmp)> minHeap(cmp);
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (minHeap.size() < n) {
+            minHeap.emplace(values[i], i);
+        } else if (values[i] > minHeap.top().first) {
+            minHeap.pop();
+            minHeap.emplace(values[i], i);
+        }
+    }
+
+    // Extract indices
+    std::vector<size_t> result;
+    while (!minHeap.empty()) {
+        result.push_back(minHeap.top().second);
+        minHeap.pop();
+    }
+
+    // Optional: sort indices by descending value
+    std::sort(result.begin(), result.end(), [&values](size_t a, size_t b) {
+        return values[a] > values[b];
+    });
+
+    return result;
+}
+

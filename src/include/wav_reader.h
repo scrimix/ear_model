@@ -33,7 +33,8 @@ inline std::vector<float> readWavFile(const std::string& path) {
     mono.reserve(frames);
     if (channels == 1) {
         for (sf_count_t i = 0; i < frames; ++i) {
-            mono.push_back(normalize_sample(interleaved[i]));
+            mono.push_back(interleaved[i]);
+            // mono.push_back(normalize_sample(interleaved[i]));
         }
     } else {
         for (sf_count_t i = 0; i < frames; ++i) {
@@ -41,7 +42,8 @@ inline std::vector<float> readWavFile(const std::string& path) {
             for (int c = 0; c < channels; ++c) {
                 sum += interleaved[i * channels + c];
             }
-            mono.push_back(normalize_sample(sum / channels));
+            mono.push_back(sum / channels);
+            // mono.push_back(normalize_sample(sum / channels));
         }
     }
     return mono;
@@ -116,7 +118,8 @@ inline std::vector<float> readWavBuffer(const std::string& buffer) {
     mono.reserve(frames);
     if (channels == 1) {
         for (sf_count_t i = 0; i < frames; ++i) {
-            mono.push_back(normalize_sample(interleaved[i]));
+            // mono.push_back(normalize_sample(interleaved[i]));
+            mono.push_back(interleaved[i]);
         }
     } else {
         for (sf_count_t i = 0; i < frames; ++i) {
@@ -124,7 +127,8 @@ inline std::vector<float> readWavBuffer(const std::string& buffer) {
             for (int c = 0; c < channels; ++c) {
                 sum += interleaved[i * channels + c];
             }
-            mono.push_back(normalize_sample(sum / channels));
+            // mono.push_back(normalize_sample(sum / channels));
+            mono.push_back(sum / channels);
         }
     }
     return mono;

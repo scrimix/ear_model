@@ -12,17 +12,17 @@ int main(int argc, char *argv[]) {
     auto buffer_size = 1024;
 
     // std::string file_path = "/Users/scrimix/Music/lofi.wav";
-    // auto loudness_coef = 100;
+    // auto loudness_coef = 0.1;
 
     // std::string file_path = "../../sound_data/rnd_single.wav";
     // auto loudness_coef = 70;
 
-    std::string file_path = "../../dataset/tests/midi_test.wav";
-    auto loudness_coef = 20;
+    std::string file_path = "../../dataset/warmup/piano_warmup_stereo.wav";
+    // auto loudness_coef = 0.1;
 
     carfac_reader_t carfac_reader;
     carfac_reader.init(file_path);
-    carfac_reader.set(sample_rate, buffer_size, loudness_coef);
+    // carfac_reader.set(sample_rate, buffer_size, loudness_coef);
 
     // auto audio_buffer = read_wav(file_path, sample_rate);
     auto audio_buffer = readWavFile(file_path);

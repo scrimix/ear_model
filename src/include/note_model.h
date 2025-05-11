@@ -29,7 +29,7 @@ struct note_model_params_t {
   float train_noise = 0.1;
   
   // carfac
-  float loudness_coef = 40;
+  float loudness_coef = 0.1;
   int sample_rate = 44100;
   int buffer_size = 1024;
 };
@@ -78,6 +78,7 @@ public:
   void load_audio_file_and_notes(std::string file_path)
   {
     carfac_reader.reset();
+    carfac_reader.clear_all_notes();
     carfac_reader.init(file_path);
     carfac_reader.set(params.sample_rate, params.buffer_size, params.loudness_coef);
     audio.buffer = readWavFile(file_path);
@@ -86,6 +87,7 @@ public:
   void load_audio(std::vector<float> const& wav)
   {
     carfac_reader.reset();
+    carfac_reader.clear_all_notes();
     carfac_reader.init(wav);
     carfac_reader.set(params.sample_rate, params.buffer_size, params.loudness_coef);
     audio.buffer = wav;
@@ -110,8 +112,13 @@ public:
     dump3.close();
   }
 
-  void load(std::string model_name)
+  bool load(std::string model_name)
   {
+    if(!std::filesystem::exists(model_name+"_sp.model")){
+      std::cerr << "note_model_t | loading model: " << model_name << " failed! File doesn't exist";
+      return false;
+    }
+
     std::ifstream in(model_name+"_sp.model", std::ios_base::in | std::ios_base::binary);
     cereal::BinaryInputArchive iarchive(in);
     sp.load_ar(iarchive);
@@ -126,6 +133,7 @@ public:
     cereal::BinaryInputArchive iarchive3(in3);
     tm.load_ar(iarchive3);
     in3.close();
+    return true;
   }
 
   void load() { load(params.models_path); }
@@ -152,7 +160,17 @@ public:
     outTM = tm.cellsToColumns(tm.getPredictiveCells());
   }
 
-  void visualize(note_image_t note_image, cv::Mat preproc_input, int pred_midi)
+  static std::vector<int> get_labels(vector<double> const& pdf, double thresh = 0.5)
+  {
+    std::vector<int> result;
+    auto best_preds = topNIndices(pdf, 10);
+      for(auto idx : best_preds)
+        if(pdf.at(idx) > thresh)
+          result.push_back(idx);
+    return result;
+  }
+
+  void visualize(note_image_t note_image, cv::Mat preproc_input, std::vector<int> pred_midi)
   {
     auto columns_mat = sdr3DToColorMap(columns);
     cv::namedWindow("columns", 2);
@@ -165,11 +183,14 @@ public:
     cv::namedWindow("input", 2);
     cv::imshow("input", preproc_input);
     
-    draw_notes(note_image);
-    if(pred_midi > 0){
+    // draw_notes(note_image);
+    draw_notes_as_keys(note_image);
+    if(!pred_midi.empty()){
       note_image.midi.clear();
-      note_image.midi.push_back(str_note_event_t::from_int(pred_midi));
-      draw_notes(note_image, note_image.mat.rows - 30);
+      for(auto note : pred_midi)
+        note_image.midi.push_back(str_note_event_t::from_int(note));
+      // draw_notes(note_image, note_image.mat.rows - 30);
+      draw_notes_as_keys(note_image, note_image.mat.rows - 30);
     }
     cv::namedWindow("nap", 2);
     cv::imshow("nap", note_image.mat);

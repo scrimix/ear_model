@@ -403,13 +403,17 @@
     }
 
     if (!audio_started) {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      console.log("starting audio...");
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
       try {
+        groundZeroTime = audioCtx.currentTime;
         const src = audioCtx.createBufferSource();
         src.buffer = audio;
         src.connect(audioCtx.destination);
         src.start();
-        groundZeroTime = audioCtx.currentTime;
+        await audioCtx.resume();
       } catch (err) {
         console.error(err);
       }
@@ -444,14 +448,12 @@
       // Audio chunk
       const samples = new Float32Array(evt.data);
       const frameCount = samples.length;
-      // normalise from 0:1 into -1:+1
-      for (let i = 0; i < frameCount; i++)
-        samples[i] = samples[i] * 2 - 1;
-
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtx)
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const buf = audioCtx.createBuffer(1, frameCount, sampleRate);
       buf.copyToChannel(samples, 0);
       audio = buf;
+      console.log("got audio! ", audio.duration);
     }
     else {
       const msg = JSON.parse(evt.data);
@@ -465,6 +467,7 @@
       if (msg.type == "avpacket") {
         image_packets.push(msg);
         newestImageTime = msg.value.ts;
+        console.log(newestImageTime);
       }
 
       if (msg.type == "demo_state") {

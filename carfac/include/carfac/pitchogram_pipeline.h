@@ -60,6 +60,7 @@ class PitchogramPipeline {
   // Process audio samples in a streaming manner. `num_samples` should match
   // `num_samples_per_segment()`.
   void ProcessSamples(const float* samples, int num_samples);
+  void ProcessJustSamples(const float* samples, int num_samples);
 
   // Input audio sample rate in Hz.
   float sample_rate_hz() const { return sample_rate_hz_; }
