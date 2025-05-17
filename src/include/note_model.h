@@ -12,6 +12,7 @@
 
 #include "carfac_reader.h"
 #include "helpers.h"
+#include "note_location.h"
 
 using namespace std;
 using namespace htm;
@@ -21,12 +22,15 @@ struct note_model_params_t {
   std::string models_path;
 
   // htm
-  uint dim = 32;
+  uint height = 32;
+  uint width = 32;
   uint column_count = 8;
   int pot_radius = 8;
-  int tm_cell_per_column = 6;
+  uint tm_cell_per_column = 6;
   int binary_thresh = 40;
   float train_noise = 0.1;
+  bool with_note_location = false;
+  std::string note_map_path = "../../dataset/note_map.txt";
   
   // carfac
   float loudness_coef = 0.1;
@@ -36,8 +40,10 @@ struct note_model_params_t {
 
 class note_model_t {
 public:
+  cv::Mat input_image;
   SpatialPooler sp;
   TemporalMemory tm;
+  note_location_t note_sdr;
   SDR input;
   SDR columns;
   SDR outTM;
@@ -47,11 +53,25 @@ public:
   AudioData audio;
 
   note_model_params_t params;
+  note_map_t note_map;
 
   void setup(note_model_params_t model_params) {
     params = model_params;
-    input.initialize({params.dim, params.dim, 1});
-    columns.initialize({params.dim, params.dim, params.column_count}); //1D vs 2D no big difference, 2D seems more natural for the problem. Speed-----, Results+++++++++; #columns HIGHEST impact. 
+    if(params.with_note_location){
+      if(fs::exists(params.note_map_path)){
+        note_map = read_note_map_from_file(params.note_map_path);
+      }
+      else{
+        note_map = create_note_map();
+        write_note_map_to_file(note_map, params.note_map_path);
+      }
+      params.height = params.height + int(round(sqrt(note_location_resolution) / 2));
+      std::cout << "total dim?? " << params.height << " " << params.width << std::endl;
+    }
+
+    input.initialize({params.height, params.width, 1});
+    columns.initialize({params.height, params.width, params.column_count}); //1D vs 2D no big difference, 2D seems more natural for the problem. Speed-----, Results+++++++++; #columns HIGHEST impact. 
+    
     sp.initialize(
       /* inputDimensions */             input.dimensions,
       /* columnDimensions */            columns.dimensions,
@@ -142,15 +162,26 @@ public:
   cv::Mat preproc_input(cv::Mat original_sai)
   {
     cv::Mat img;
-    cv::resize(original_sai, img, cv::Size(params.dim, params.dim), 0, 0, cv::INTER_LANCZOS4);
+    cv::resize(original_sai, img, cv::Size(params.width, params.width), 0, 0, cv::INTER_LANCZOS4);
     cv::cvtColor(img, img, cv::COLOR_BGR2GRAY);
     cv::threshold(img, img, params.binary_thresh, 255, cv::THRESH_BINARY);
     return img;
   }
 
-  void feedforward(cv::Mat const& img, bool train)
+  void feedforward(cv::Mat const& sai, std::vector<uint> const& labels, bool train)
   {
-    auto vec_img = mat_to_vector(img);
+    input_image = preproc_input(sai);
+    auto vec_img = mat_to_vector(input_image);
+
+    if(params.with_note_location){
+      auto orig = vec_img.size();
+      note_sdr = {};
+      for(auto& label : labels)
+        note_sdr |= note_map.at(label);
+      vec_img = concat(vec_img, note_sdr);
+      input_image = vectorToMat(vec_img, params.height, params.width);
+    }
+
     input.setDense(vec_img);
     if(train)
       input.addNoise(params.train_noise);
@@ -170,18 +201,26 @@ public:
     return result;
   }
 
-  void visualize(note_image_t note_image, cv::Mat preproc_input, std::vector<int> pred_midi)
+  void visualize(note_image_t note_image, std::vector<int> pred_midi)
   {
+    // cv::Mat columns_mat;
+    // if(params.with_note_location)
+    //   columns_mat = draw_sp_output(columns, params.dim, params.dim, note_location_resolution);
+    // else
     auto columns_mat = sdr3DToColorMap(columns);
     cv::namedWindow("columns", 2);
     cv::imshow("columns", columns_mat);
 
+    // cv::Mat tm_mat;
+    // if(params.with_note_location)
+    //   tm_mat = draw_sp_output(outTM, params.dim, params.dim, note_location_resolution);
+    // else
     auto tm_mat = sdr3DToColorMap(outTM);
     cv::namedWindow("tm", 2);
     cv::imshow("tm", tm_mat);
 
     cv::namedWindow("input", 2);
-    cv::imshow("input", preproc_input);
+    cv::imshow("input", input_image);
     
     // draw_notes(note_image);
     draw_notes_as_keys(note_image);

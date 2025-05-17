@@ -2,7 +2,7 @@
 #include "midi_to_wav.h"
 #include <fstream>
 
-static const std::string model_name = "fenrir";
+static const std::string model_name = "poly";
 
 bool check_and_gen_if_midi(std::string file)
 {
@@ -26,17 +26,20 @@ void train_notes(note_model_t& model)
 {
   auto root = "../../dataset/"s;
 
-  std::vector<std::string> dirs = {
-    "warmup", "warmup", "train/train2", "train/rnd_train"
-  };
-  for(auto& dir : dirs)
-    dir = root + dir;
+  // std::vector<std::string> dirs = {
+  //   "warmup", "warmup", "train/train2", "train/rnd_train"
+  // };
 
   // std::vector<std::string> dirs = { 
   //   root+"warmup", root+"recs", root+"recs", root+"recs"
   // };
 
   // auto dirs = { "../../../maestro-v3.0.0" };
+
+  std::vector<std::string> dirs = { "train/rnd_train", "train/rnd_multi" };
+
+  for(auto& dir : dirs)
+    dir = root + dir;
 
   // model.load(model_name); // continue training
 
@@ -52,14 +55,13 @@ void train_notes(note_model_t& model)
       while(model.carfac_reader.get_render_pos() < model.audio.total_bytes()){
         auto note_image = model.carfac_reader.next();
         
-        auto img = model.preproc_input(note_image.mat);
         auto labels = midi_to_labels(note_image.midi);
         auto label = labels.empty() ? 0 : labels.at(0);
         std::sort(labels.begin(), labels.end());
         if(labels.empty())
           labels.push_back(0);
 
-        model.feedforward(img, true);
+        model.feedforward(note_image.mat, labels, true);
 
         // model.clsr.learn(model.columns, label);
         if(model.carfac_reader.total_note_count() != 0)
@@ -67,7 +69,7 @@ void train_notes(note_model_t& model)
 
         static int64_t skip_some = 0;
         if(++skip_some % 10 == 0)
-          model.visualize(note_image, img, {});
+          model.visualize(note_image, {});
 
         std::cout << "\rstep... " << model.carfac_reader.get_render_pos() / float(model.audio.total_bytes()) * 100 << "%";
         std::cout.flush();
@@ -111,16 +113,14 @@ void test_notes(note_model_t& model)
     model.tm.reset();
     while(model.carfac_reader.get_render_pos() < model.audio.total_bytes()){
       auto note_image = model.carfac_reader.next();
-      
-      auto img = model.preproc_input(note_image.mat);
       auto labels = midi_to_labels(note_image.midi);
 
-      model.feedforward(img, false);
+      model.feedforward(note_image.mat, {0}, false);
 
       auto pdf = model.clsr.infer(model.outTM);
       auto pred_midi = note_model_t::get_labels(pdf, 0.3);
 
-      model.visualize(note_image, img, pred_midi);
+      model.visualize(note_image, pred_midi);
     }
   }
 }
@@ -128,7 +128,10 @@ void test_notes(note_model_t& model)
 int main()
 {
   note_model_t model;
-  model.setup({});
+  note_model_params_t params;
+  params.with_note_location = true;
+
+  model.setup(params);
   train_notes(model);
   test_notes(model);
 }

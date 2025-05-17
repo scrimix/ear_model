@@ -97,6 +97,21 @@ inline void exit_on_ctrl_c(int a)
     std::exit(1);
 }
 
+inline cv::Mat vectorToMat(const std::vector<uint8_t>& vec, int rows, int cols) {
+    cv::Mat mat(rows, cols, CV_8U);
+    for (int i = 0; i < std::min((int)vec.size(), rows * cols); ++i) {
+        int r = i / cols, c = i % cols;
+        mat.at<uchar>(r, c) = vec[i];
+    }
+    return mat;
+}
+
+inline htm::SDR reshape_sdr(const htm::SDR& flat, std::vector<uint> dims) {
+    htm::SDR reshaped(dims);
+    reshaped.setSparse(flat.getSparse()); // or use .setDense() if needed
+    return reshaped;
+}
+
 inline cv::Mat sdr3DToColorMap(const htm::SDR &sdr) {
   auto d = sdr.dimensions;             // {H, W, C}
   int H = d[0], W = d[1], C = d[2];
@@ -135,11 +150,42 @@ inline cv::Mat sdr3DToColorMap(const htm::SDR &sdr) {
   return color;
 }
 
-inline std::vector<char> mat_to_vector(cv::Mat img)
+inline cv::Mat draw_sp_output(const htm::SDR& columns, int H = 32, int W = 32, int note_size = 256) {
+    int image_size = H * W;
+
+    cv::Mat sai_img(H, W, CV_8U, cv::Scalar(0));
+    cv::Mat note_img(note_size, 1, CV_8U, cv::Scalar(0));
+
+    for (auto idx : columns.getSparse()) {
+        if (idx < image_size) {
+            int r = idx / W;
+            int c = idx % W;
+            sai_img.at<uchar>(r, c) = 255;
+        } else if (idx < image_size + note_size) {
+            int i = idx - image_size;
+            note_img.at<uchar>(i, 0) = 255;
+        }
+    }
+
+    // Resize note SDR to match image height visually
+    cv::Mat note_resized;
+    cv::resize(note_img, note_resized, cv::Size(8, H), 0, 0, cv::INTER_NEAREST);
+
+    // Concatenate horizontally: [SAI | Note SDR]
+    cv::Mat combined;
+    cv::hconcat(sai_img, note_resized, combined);
+
+    // Optionally add color map
+    cv::Mat color;
+    cv::applyColorMap(combined, color, cv::COLORMAP_JET);
+    return color;
+}
+
+inline std::vector<uint8_t> mat_to_vector(cv::Mat img)
 {
   // allocate vector large enough to hold all bytes
   size_t nBytes = img.total() * img.elemSize();  
-  std::vector<char> buf(nBytes);
+  std::vector<uint8_t> buf(nBytes);
   // copy raw data
   std::memcpy(buf.data(), img.data, nBytes);
   return buf;
@@ -193,3 +239,10 @@ inline std::vector<size_t> topNIndices(const std::vector<double>& values, size_t
     return result;
 }
 
+
+inline int random_midi_note(int min = 21, int max = 108) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dist(min, max); // MIDI: 21 (A0) to 108 (C8)
+    return dist(gen);
+}

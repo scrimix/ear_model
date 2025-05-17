@@ -59,7 +59,12 @@ struct runner_t
     void load_model()
     {
         // params.models_path = "../../models/carfac_latest";
-        params.models_path = "../../stable_models/fenrir/fenrir";
+        // params.models_path = "../../stable_models/fenrir/fenrir";
+
+        params.models_path = "../../stable_models/greedy/greedy";
+        params.note_map_path = "../../stable_models/note_map.txt";
+        params.with_note_location = true;
+
         model.setup(params);
         model.load();
     }
@@ -81,12 +86,12 @@ struct runner_t
     bool is_finished() const { return model.carfac_reader.get_render_pos() >= model.audio.total_bytes(); }
     float progress() const { return std::min(100.f, model.carfac_reader.get_render_pos() / float(model.audio.total_bytes()) * 100); }
 
-    av_packet_t get_packet(note_image_t& note_image, cv::Mat preproc_input, uint pred_midi)
+    av_packet_t get_packet(note_image_t& note_image, uint pred_midi)
     {
         av_packet_t result;
         result.columns = sdr3DToColorMap(model.columns);
         result.tm = sdr3DToColorMap(model.outTM);
-        result.input = preproc_input;
+        result.input = model.input_image.clone();
     
         draw_notes_as_keys(note_image);
         if(pred_midi > 0){
@@ -110,9 +115,8 @@ struct runner_t
             return;
         auto note_image = model.carfac_reader.next();
         
-        auto img = model.preproc_input(note_image.mat);
         auto labels = midi_to_labels(note_image.midi);
-        model.feedforward(img, false);
+        model.feedforward(note_image.mat, {uint(random_midi_note())}, false);
         auto pdf = model.clsr.infer(model.outTM);
         auto preds = note_model_t::get_labels(pdf, 0.3);
         auto pred_midi = preds.empty() ? 0 : preds.at(0);
@@ -122,7 +126,7 @@ struct runner_t
             labeler.skip();
 
         if(with_av_packet)
-            last_packet = get_packet(note_image, img, pred_midi);
+            last_packet = get_packet(note_image, pred_midi);
     }
 
     void reset()

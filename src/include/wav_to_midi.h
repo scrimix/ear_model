@@ -124,7 +124,7 @@ inline std::vector<midi_event_t> detect_notes(note_model_t& model, midi_labeler_
       
       auto img = model.preproc_input(note_image.mat);
       auto labels = midi_to_labels(note_image.midi);
-      model.feedforward(img, false);
+      model.feedforward(img, {0}, false);
       auto pdf = model.clsr.infer(model.outTM);
       auto pred_midi = argmax(pdf);
       if(pred_midi > 0)
