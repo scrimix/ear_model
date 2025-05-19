@@ -2,7 +2,7 @@
 #include "accuracy_score.h"
 #include "named_models.h"
 
-static tbt_params_t params = deep_eye;
+static tbt_params_t params = many_eyes;
 
 void accuracy_test(tbt_model_t& tbt)
 {
@@ -16,6 +16,7 @@ void accuracy_test(tbt_model_t& tbt)
     tbt.reset_tms();
 
     AccuracyStats stats;
+    AccuracyStats voting_stats;
     while(tbt.core.carfac_reader.get_render_pos() < tbt.core.audio.total_bytes()){
         auto note_image = tbt.core.carfac_reader.next();
 
@@ -23,14 +24,21 @@ void accuracy_test(tbt_model_t& tbt)
         skip_some++;
         
         auto true_labels = midi_to_labels(note_image.midi);
-        auto predictions = tbt.infer(note_image);
+        std::vector<int> voting_preds;
+        auto predictions = tbt.infer(note_image, &voting_preds);
         if(skip_some % 10 == 0)
           tbt.visualize(note_image, predictions);
         stats.update(true_labels, predictions);
 
-        std::cout << "\rstep... " << tbt.core.audio_progress() << "%" << " | f1: "
-          << std::fixed << std::setprecision(5) 
-          << stats.f1() << ", recall: " << stats.recall() << ", precision:" << stats.precision();
+        if(tbt.params.use_voting_tm)
+          voting_stats.update(true_labels, voting_preds);
+
+      // std::cout << "sp hist: " << midi_array_to_string(predictions);
+      // std::cout << ", voting: " << midi_array_to_string(voting_preds);
+      // std::cout << ", gt: " << midi_array_to_string(true_labels) << std::endl;
+
+        std::cout << "\rstep... " << std::fixed << std::setprecision(2) << tbt.core.audio_progress() << "%";
+        std::cout << "    sp[" << stats << "]    vt[" << voting_stats << "]  ";
         std::cout.flush();
     }
   }
@@ -68,8 +76,7 @@ void train_tbt()
         static int64_t skip_some = 0;
         skip_some++;
 
-        // if(skip_some % 3 == 0)
-          tbt.train(note_image);
+        tbt.train(note_image);
         
         if(skip_some % 9 == 0)
           tbt.visualize(note_image);
@@ -80,10 +87,10 @@ void train_tbt()
       std::cout << "\n";
 
       tbt.save();
-      // break;
+      break;
     }
     accuracy_test(tbt);
-    // break;
+    break;
   }
 }
 
@@ -97,6 +104,6 @@ void test_tbt()
 
 int main()
 {
-  // train_tbt();
+  train_tbt();
   test_tbt();
 }

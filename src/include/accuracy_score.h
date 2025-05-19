@@ -2,6 +2,7 @@
 #include <vector>
 #include <unordered_set>
 #include <iostream>
+#include <iomanip>
 
 struct AccuracyStats {
     int TP = 0;
@@ -43,3 +44,10 @@ struct AccuracyStats {
                   << ", F1 Score: " << f1() << "\n";
     }
 };
+
+inline std::ostream& operator<<(std::ostream& os, AccuracyStats const& stats)
+{
+    return os << "f1: "
+        << std::fixed << std::setprecision(4) 
+        << stats.f1() << ", recall: " << stats.recall() << ", precision:" << stats.precision();
+}

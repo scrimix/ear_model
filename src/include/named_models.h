@@ -60,7 +60,8 @@ static tbt_params_t many_eyes = []() -> tbt_params_t {
     result.core.height = 32;
     result.core.width = 32;
     result.core.column_count = 16;
-    result.vote_repeats = 3;
+    result.vote_repeats = 2;
+    result.use_voting_tm = true;
     result.pred_thresh = 0.15;
     result.regions = basic_regions();
     concat(&result.regions, more_regions());

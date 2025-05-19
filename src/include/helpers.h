@@ -97,8 +97,9 @@ inline void exit_on_ctrl_c(int a)
     std::exit(1);
 }
 
-inline cv::Mat vectorToMat(const std::vector<uint8_t>& vec, int rows, int cols) {
+inline cv::Mat vector_to_mat(const std::vector<uint8_t>& vec, int rows, int cols) {
     cv::Mat mat(rows, cols, CV_8U);
+    mat = cv::Scalar(0);
     for (int i = 0; i < std::min((int)vec.size(), rows * cols); ++i) {
         int r = i / cols, c = i % cols;
         mat.at<uchar>(r, c) = vec[i];
@@ -148,6 +149,69 @@ inline cv::Mat sdr3DToColorMap(const htm::SDR &sdr) {
   cv::Mat color;
   cv::applyColorMap(norm, color, cv::COLORMAP_JET);
   return color;
+}
+
+inline cv::Mat sdr1DToColorMap(const htm::SDR &sdr)
+{
+  int N = 1;
+  for (auto d : sdr.dimensions)
+    N *= d;
+
+  const int rows = static_cast<int>(std::floor(std::sqrt(N)));
+  const int cols = static_cast<int>(std::ceil(static_cast<double>(N) / rows));
+
+  cv::Mat mat(rows, cols, CV_8UC1, cv::Scalar(0));
+
+  for (int bit : sdr.getSparse()) {
+    int r = bit / cols;
+    int c = bit % cols;
+    if (r < rows && c < cols)
+      mat.at<uint8_t>(r, c) = 255;
+  }
+
+  // Optional: colorize for nicer display
+  cv::Mat color;
+  cv::applyColorMap(mat, color, cv::COLORMAP_JET);
+  return color;
+}
+
+inline cv::Mat sdr1DToColorMapBySlice(const htm::SDR &sdr, int cellsPerColumn = 32)
+{
+    int N = 1;
+    for (auto d : sdr.dimensions)
+      N *= d;
+
+    const int rows = static_cast<int>(std::floor(std::sqrt(N)));
+    const int cols = static_cast<int>(std::ceil(static_cast<double>(N) / rows));
+
+    cv::Mat sumIdx(rows, cols, CV_32FC1, cv::Scalar(0));
+    cv::Mat count (rows, cols, CV_32FC1, cv::Scalar(0));
+
+    for (int bit : sdr.getSparse()) {
+        int row = bit / cols;
+        int col = bit % cols;
+
+        int slice = bit % cellsPerColumn;  // Which cell in the column
+        sumIdx.at<float>(row, col) += float(slice);
+        count.at<float>(row, col) += 1.0f;
+    }
+
+    cv::Mat norm(rows, cols, CV_8UC1);
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            float cnt = count.at<float>(r, c);
+            if (cnt > 0.0f) {
+                float avg = sumIdx.at<float>(r, c) / cnt;
+                norm.at<uint8_t>(r, c) = uint8_t((avg / float(cellsPerColumn - 1)) * 255.0f);
+            } else {
+                norm.at<uint8_t>(r, c) = 0;
+            }
+        }
+    }
+
+    cv::Mat color;
+    cv::applyColorMap(norm, color, cv::COLORMAP_JET);
+    return color;
 }
 
 inline cv::Mat draw_sp_output(const htm::SDR& columns, int H = 32, int W = 32, int note_size = 256) {
@@ -208,6 +272,14 @@ inline std::string read_text_file(const std::string& path) {
   return buf;
 }
 
+inline void write_text_to_file(std::string const& path, std::string const& content)
+{
+    std::ofstream file;
+    file.open(path);
+    file << content;
+    file.close();
+}
+
 // Return indices of top-n largest elements in a vector
 inline std::vector<size_t> topNIndices(const std::vector<double>& values, size_t n) {
     // Min-heap to store the top n elements (value, index)
@@ -257,4 +329,11 @@ template<typename T>
 void concat(std::vector<T>* dst, const std::vector<T>& src) {
     if (!dst) return;
     dst->insert(dst->end(), src.begin(), src.end());
+}
+
+inline std::pair<int, int> square_ish_sdr(int size)
+{
+    int rows = static_cast<int>(std::floor(std::sqrt(size)));
+    int cols = static_cast<int>(std::ceil(static_cast<double>(size) / rows));
+    return {rows, cols};
 }

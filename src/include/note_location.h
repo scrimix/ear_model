@@ -20,7 +20,7 @@ inline note_map_t create_note_map() {
         note_location_t sdr;
         std::unordered_set<int> on_bits;
 
-        while (on_bits.size() < 5) {
+        while (on_bits.size() < note_location_resolution * 0.02) {
             int idx = gen() % note_location_resolution;
             on_bits.insert(idx);
         }
@@ -56,11 +56,10 @@ inline note_map_t read_note_map_from_file(std::string const& file_path)
         std::getline(iss, sdrStr);
 
         int midi_note = std::stoi(keyStr);
-        std::bitset<256> sdr(sdrStr);
+        std::bitset<note_location_resolution> sdr(sdrStr);
 
         result[midi_note] = sdr;
     }
-
 
     return result;
 }
@@ -74,4 +73,29 @@ inline std::vector<uint8_t> concat(std::vector<uint8_t> const& image, note_locat
     for(auto i = 0; i < note_location.size(); i++)
         result[image.size() + i] = note_location[i] ? 255 : 0;
     return result;
+}
+
+inline std::vector<uint8_t> note_location_to_vec(note_location_t const& location)
+{
+    std::vector<uint8_t> result;
+    result.resize(location.size());
+    for(auto i = 0; i < location.size(); i++)
+        result[i] = location[i] ? 255 : 0;
+    return result;
+}
+
+inline note_location_t midi_pred_to_location(note_map_t const& note_map, std::vector<int> const& pred)
+{
+    note_location_t result;
+    for(auto& midi : pred)
+        result |= note_map.at(midi);
+    return result;
+}
+
+inline std::vector<uint32_t> to_sparse_indices(const std::vector<uint8_t>& dense_vec)
+{
+    std::vector<uint32_t> sparse;
+    for (uint32_t i = 0; i < dense_vec.size(); ++i)
+        if (dense_vec[i]) sparse.push_back(i);
+    return sparse;
 }

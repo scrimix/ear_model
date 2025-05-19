@@ -45,6 +45,9 @@ struct note_model_params_t {
   int buffer_size = 1024;
 };
 
+inline crow::json::wvalue params_to_json(const note_model_params_t& params);
+inline note_model_params_t params_from_json(const crow::json::rvalue& j);
+
 class note_model_t {
 public:
   cv::Mat input_image;
@@ -128,6 +131,8 @@ public:
 
   void save(std::string model_name)
   {
+    fs::create_directory(fs::path(model_name).parent_path());
+
     // Save the model
     ofstream dump(model_name+"_sp.model", ofstream::binary | ofstream::trunc | ofstream::out);
     cereal::BinaryOutputArchive oarchive(dump);
@@ -166,6 +171,7 @@ public:
     cereal::BinaryInputArchive iarchive3(in3);
     tm.load_ar(iarchive3);
     in3.close();
+
     return true;
   }
 
@@ -192,7 +198,7 @@ public:
       for(auto& label : labels)
         note_sdr |= note_map.at(label);
       vec_img = concat(vec_img, note_sdr);
-      input_image = vectorToMat(vec_img, params.height, params.width);
+      input_image = vector_to_mat(vec_img, params.height, params.width);
     }
 
     input.setDense(vec_img);

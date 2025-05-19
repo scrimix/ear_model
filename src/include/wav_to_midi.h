@@ -2,28 +2,8 @@
 
 #include "note_model.h"
 #include "vector_buf.h"
+#include "midi_note.h"
 #include <midifile/MidiFile.h>
-
-struct midi_tick_t
-{
-    int64_t index = 0;
-    int64_t ts = 0;
-};
-
-struct midi_event_t
-{
-    int midi_value = 0;
-    std::vector<midi_tick_t> ticks;
-};
-
-inline std::ostream& operator<<(std::ostream& os, midi_event_t const& midi_event)
-{
-    auto str_event = str_note_event_t::from_int(midi_event.midi_value);
-    os << "note(" << str_event.note_name << ", " << midi_event.midi_value;
-    os << ", " << "from_ts: " << midi_event.ticks.front().ts << " to_ts: " << midi_event.ticks.back().ts;
-    os << " [" << midi_event.ticks.front().index << ":" << midi_event.ticks.back().index << "]" << ")";
-    return os;
-}
 
 class midi_labeler_t
 {

@@ -2,32 +2,12 @@
 
 #include "note_model.h"
 #include "vector_buf.h"
+#include "midi_note.h"
 #include <midifile/MidiFile.h>
 #include <fluidsynth.h>
 #include <vector>
 #include <string>
 #include <fstream>
-
-struct note_event_t {
-    int midi_value = 0;
-    int64_t time_point = 0;
-    enum {UP, DOWN} pos = UP;
-};
-
-inline void save_notes(std::vector<note_event_t> note_events, std::string const& file_path)
-{
-    std::string notes[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
-    std::ofstream file(file_path);
-    for(auto& note : note_events){
-        auto octave = note.midi_value / 12 - 1;
-        auto note_name = notes[note.midi_value % 12];
-        file << note_name << octave << ",";
-        file << note.time_point << ",";
-        file << (note.pos == note_event_t::UP ? "UP" : "DOWN");
-        file << "\n";
-    }
-    file.close();
-}
 
 struct fluid_synth_ctx_t
 {
