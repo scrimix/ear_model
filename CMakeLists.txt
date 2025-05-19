@@ -75,6 +75,9 @@ target_link_libraries(mnist_train ${COMMON_LIBS})
 add_executable(notes_train src/notes_train.cpp)
 target_link_libraries(notes_train ${COMMON_LIBS})
 
+add_executable(tbt_train src/tbt_train.cpp)
+target_link_libraries(tbt_train ${COMMON_LIBS})
+
 add_executable(midi_cvt src/midi_cvt.cpp)
 target_link_libraries(midi_cvt ${COMMON_LIBS})
 

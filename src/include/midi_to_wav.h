@@ -133,3 +133,21 @@ inline void create_wav_and_labels(smf::MidiFile& midi_file, std::string dir, std
     delete_fluid_synth(ctx.synth);
     delete_fluid_settings(settings);
 }
+
+inline bool check_and_gen_if_midi(std::string file)
+{
+  std::filesystem::path p(file);
+  std::string ext = p.extension();
+  for(auto& c : ext)
+    c = tolower(c);
+  if(ext == ".mid" || ext == ".midi"){
+    smf::MidiFile midi_file;
+    std::ifstream stream(file);
+    midi_file.read(stream);
+    midi_file.doTimeAnalysis();
+    midi_file.linkNotePairs();
+    create_wav_and_labels(midi_file, ".",  "midi_train", 2);
+    return true;
+  }
+  return false;
+}

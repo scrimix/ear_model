@@ -4,24 +4,6 @@
 
 static const std::string model_name = "poly";
 
-bool check_and_gen_if_midi(std::string file)
-{
-  std::filesystem::path p(file);
-  std::string ext = p.extension();
-  for(auto& c : ext)
-    c = tolower(c);
-  if(ext == ".mid" || ext == ".midi"){
-    smf::MidiFile midi_file;
-    std::ifstream stream(file);
-    midi_file.read(stream);
-    midi_file.doTimeAnalysis();
-    midi_file.linkNotePairs();
-    create_wav_and_labels(midi_file, ".",  "midi_train", 2);
-    return true;
-  }
-  return false;
-}
-
 void train_notes(note_model_t& model)
 {
   auto root = "../../dataset/"s;
@@ -55,7 +37,8 @@ void train_notes(note_model_t& model)
       while(model.carfac_reader.get_render_pos() < model.audio.total_bytes()){
         auto note_image = model.carfac_reader.next();
         
-        auto labels = midi_to_labels(note_image.midi);
+        auto labels_int = midi_to_labels(note_image.midi);
+        std::vector<uint32_t> labels(labels_int.begin(), labels_int.end());
         auto label = labels.empty() ? 0 : labels.at(0);
         std::sort(labels.begin(), labels.end());
         if(labels.empty())
@@ -63,9 +46,12 @@ void train_notes(note_model_t& model)
 
         model.feedforward(note_image.mat, labels, true);
 
-        // model.clsr.learn(model.columns, label);
-        if(model.carfac_reader.total_note_count() != 0)
-          model.clsr.learn(model.outTM, labels);
+        if(model.carfac_reader.total_note_count() != 0){
+          if(model.params.with_tm)
+            model.clsr.learn(model.outTM, labels);
+          else
+            model.clsr.learn(model.columns, labels);
+        }
 
         static int64_t skip_some = 0;
         if(++skip_some % 10 == 0)
@@ -117,7 +103,11 @@ void test_notes(note_model_t& model)
 
       model.feedforward(note_image.mat, {0}, false);
 
-      auto pdf = model.clsr.infer(model.outTM);
+      PDF pdf;
+      if(model.params.with_tm)
+        pdf = model.clsr.infer(model.outTM);
+      else
+        pdf = model.clsr.infer(model.columns);
       auto pred_midi = note_model_t::get_labels(pdf, 0.3);
 
       model.visualize(note_image, pred_midi);

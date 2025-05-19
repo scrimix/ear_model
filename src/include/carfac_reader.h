@@ -143,9 +143,9 @@ inline std::vector<str_note_event_t> read_notes(std::string const& file_path)
     return result;
 }
 
-inline std::vector<uint32_t> midi_to_labels(std::vector<str_note_event_t> midi)
+inline std::vector<int> midi_to_labels(std::vector<str_note_event_t> midi)
 {
-  std::vector<uint32_t> labels;
+  std::vector<int> labels;
     for(auto& note : midi)
       labels.push_back(note.to_midi_int());
   return labels;

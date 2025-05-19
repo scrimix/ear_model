@@ -246,3 +246,15 @@ inline int random_midi_note(int min = 21, int max = 108) {
     std::uniform_int_distribution<> dist(min, max); // MIDI: 21 (A0) to 108 (C8)
     return dist(gen);
 }
+
+inline void show(std::string title, cv::Mat image)
+{
+    cv::namedWindow(title, 2);
+    cv::imshow(title, image);
+}
+
+template<typename T>
+void concat(std::vector<T>* dst, const std::vector<T>& src) {
+    if (!dst) return;
+    dst->insert(dst->end(), src.begin(), src.end());
+}
