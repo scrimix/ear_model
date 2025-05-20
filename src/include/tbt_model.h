@@ -13,11 +13,14 @@ struct tbt_params_t
   note_model_params_t core;
   std::vector<cv::Rect> regions;
   std::vector<std::string> train_dirs;
+  std::vector<std::string> voting_dirs;
 
   bool use_voting_tm = false;
   voting_params_t voting_params;
   int vote_repeats = 0;
   float pred_thresh = 0.1;
+
+  bool operator==(tbt_params_t const& other) const;
 };
 
 inline crow::json::wvalue regions_to_json(const std::vector<cv::Rect>& regions);
@@ -103,15 +106,30 @@ struct tbt_model_t
       tasks.push_back(std::async(std::launch::async, [&, i]{ train_step(i); }));
     for (auto& task : tasks)
       task.get();
+  }
 
-    if(params.use_voting_tm){
-      std::vector<note_location_t> notes_per_region;
-      for(auto& model : models){
-        auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
-        notes_per_region.push_back(pred);
-      }
-      voting.train(labels, notes_per_region);
+  void train_voting(note_image_t& note_image)
+  {
+    auto labels_int = midi_to_labels(note_image.midi);
+    std::vector<uint32_t> labels(labels_int.begin(), labels_int.end());
+    auto label = labels.empty() ? 0 : labels.at(0);
+    std::sort(labels.begin(), labels.end());
+    if(labels.empty())
+      labels.push_back(0);
+
+    std::vector<note_location_t> notes_per_region;
+    for(auto i = 0; i < models.size(); i++){
+      note_location_t note_set;
+      auto pred = infer_step(models.at(i), note_image);
+      for(auto& note : pred)
+        note_set |= encode_note_shifted(note, i);
+        //  note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
+    //   auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
+      if(!note_set.any())
+        note_set = encode_note_shifted(0, i);
+      notes_per_region.push_back(note_set);
     }
+    voting.train(labels, notes_per_region);
   }
 
   std::vector<int> infer_step(ptr<note_model_t> model, note_image_t const& note_image) {
@@ -122,10 +140,12 @@ struct tbt_model_t
       pdf = model->clsr.infer(model->outTM);
     else
       pdf = model->clsr.infer(model->columns);
-    return note_model_t::get_labels(pdf, params.pred_thresh);
+    auto result = note_model_t::get_labels(pdf, params.pred_thresh);
+    result.erase(std::remove(result.begin(), result.end(), 0), result.end());
+    return result;
   }
 
-  std::vector<int> infer(note_image_t& note_image, std::vector<int>* voting_preds = nullptr){
+  std::vector<int> infer(note_image_t& note_image){
     auto labels = midi_to_labels(note_image.midi);
     auto label = labels.empty() ? 0 : labels.at(0);
     std::sort(labels.begin(), labels.end());
@@ -150,19 +170,29 @@ struct tbt_model_t
     for(auto& [label_idx, repeats] : midi_hist)
       if(repeats > params.vote_repeats)
         result.push_back(label_idx);
-    
-    if(params.use_voting_tm){
-      std::vector<note_location_t> notes_per_region;
-      for(auto& model : models){
-        auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
-        notes_per_region.push_back(pred);
-      }
-      auto voting_result = voting.infer(notes_per_region);
-      if(voting_preds)
-        *voting_preds = voting_result;
-    }
 
+    result.erase(std::remove(result.begin(), result.end(), 0), result.end());
     return result;
+  }
+
+  std::vector<int> infer_voting(note_image_t& note_image)
+  {
+    std::vector<note_location_t> notes_per_region;
+    for(auto i = 0; i < models.size(); i++){
+      // auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
+      note_location_t note_set;
+      auto pred = infer_step(models.at(i), note_image);
+      for(auto& note : pred)
+        note_set |= encode_note_shifted(note, i);
+        // note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
+
+      if(!note_set.any())
+        note_set = encode_note_shifted(0, i);
+      notes_per_region.push_back(note_set);
+    }
+    auto voting_result = voting.infer(notes_per_region);
+    voting_result.erase(std::remove(voting_result.begin(), voting_result.end(), 0), voting_result.end());
+    return voting_result;
   }
 
   void visualize(note_image_t& note_image, std::vector<int> pred_midi = {})
@@ -213,6 +243,42 @@ struct tbt_model_t
     }
   }
 
+  void save_voting()
+  {
+    voting.save(params.core.models_path+"/voting/voting");
+    write_text_to_file(params.core.models_path+"/voting/params.json", voting_params_to_json(voting.params).dump());
+  }
+
+  void loadv2()
+  {
+    params = tbt_params_from_json(crow::json::load(read_text_file(params.core.models_path+"/main_params.json")));
+    if(params.core.with_note_location && !params.use_voting_tm)
+      core.note_map = read_note_map_from_file(params.core.models_path+"/note_map.txt");
+    setup(params, true);
+
+    std::vector<std::future<void>> tasks;
+    for(auto model : models){
+      tasks.push_back(std::async(std::launch::async, [model]{ 
+        model->load();
+      }));
+    }
+    for(auto& task : tasks)
+      task.get();
+
+    if(params.use_voting_tm){
+      if(fs::exists(params.core.models_path+"/voting")){
+        auto params_txt = read_text_file(params.core.models_path+"/voting/params.json");
+        params.voting_params = voting_params_from_json(crow::json::load(params_txt));
+        voting.setup(params.voting_params);
+        voting.load(params.core.models_path+"/voting/voting");
+      }
+      else{
+        params.voting_params.region_count = params.regions.size();
+        voting.setup(params.voting_params);
+      }
+    }
+  }
+
   void load(){
     params = tbt_params_from_json(crow::json::load(read_text_file(params.core.models_path+"/main_params.json")));
     if(params.core.with_note_location && !params.use_voting_tm)
@@ -256,10 +322,16 @@ struct tbt_model_t
       task.get();
 
     if(params.use_voting_tm){
-      auto params_txt = read_text_file(params.core.models_path+"/voting/params.json");
-      params.voting_params = voting_params_from_json(crow::json::load(params_txt));
-      voting.setup(params.voting_params);
-      voting.load(params.core.models_path+"/voting/voting");
+      if(fs::exists(params.core.models_path+"/voting")){
+        auto params_txt = read_text_file(params.core.models_path+"/voting/params.json");
+        params.voting_params = voting_params_from_json(crow::json::load(params_txt));
+        voting.setup(params.voting_params);
+        voting.load(params.core.models_path+"/voting/voting");
+      }
+      else{
+        params.voting_params.region_count = params.regions.size();
+        voting.setup(params.voting_params);
+      }
     }
   }
 
@@ -295,6 +367,8 @@ inline crow::json::wvalue tbt_params_to_json(const tbt_params_t& params) {
   result["regions"] = regions_to_json(params.regions);
   for (size_t i = 0; i < params.train_dirs.size(); ++i)
     result["train_dirs"][i] = params.train_dirs[i];
+  for (size_t i = 0; i < params.voting_dirs.size(); ++i)
+    result["voting_dirs"][i] = params.voting_dirs[i];
   result["use_voting_tm"] = params.use_voting_tm;
   result["voting_params"] = voting_params_to_json(params.voting_params);
   result["vote_repeats"] = params.vote_repeats;
@@ -308,9 +382,24 @@ inline tbt_params_t tbt_params_from_json(const crow::json::rvalue& j) {
   result.regions = regions_from_json(j["regions"]);
   for (size_t i = 0; i < j["train_dirs"].size(); ++i)
     result.train_dirs.push_back(j["train_dirs"][i].s());
+  for (size_t i = 0; i < j["voting_dirs"].size(); ++i)
+    result.voting_dirs.push_back(j["voting_dirs"][i].s());
   result.use_voting_tm = j["use_voting_tm"].b();
   result.voting_params = voting_params_from_json(j["voting_params"]);
   result.vote_repeats = j["vote_repeats"].i();
   result.pred_thresh = j["pred_thresh"].d();
   return result;
+}
+
+inline bool tbt_params_t::operator==(tbt_params_t const& other) const
+{
+  return 
+    core == other.core && 
+    regions == other.regions && 
+    train_dirs == other.train_dirs && 
+    voting_dirs == other.voting_dirs && 
+    use_voting_tm == other.use_voting_tm && 
+    voting_params == other.voting_params && 
+    vote_repeats == other.vote_repeats && 
+    pred_thresh == other.pred_thresh;
 }

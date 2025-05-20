@@ -62,10 +62,12 @@ static tbt_params_t many_eyes = []() -> tbt_params_t {
     result.core.column_count = 16;
     result.vote_repeats = 2;
     result.use_voting_tm = true;
-    result.pred_thresh = 0.15;
+    result.pred_thresh = 0.099;
+    result.voting_params.cell_count = 8;
     result.regions = basic_regions();
     concat(&result.regions, more_regions());
     concat(&result.regions, generateFoveatedRegions(cv::Size(800,600), 8));
     result.train_dirs = { "train/rnd_train", "train/rnd_multi", "train/midi_train"  };
+    result.voting_dirs = { "train/rnd_train", "train/rnd_multi", "train/midi_train"  };
     return result;
 }();

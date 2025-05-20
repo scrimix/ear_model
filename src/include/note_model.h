@@ -43,6 +43,8 @@ struct note_model_params_t {
   float loudness_coef = 0.1;
   int sample_rate = 44100;
   int buffer_size = 1024;
+
+  bool operator==(note_model_params_t const& other) const;
 };
 
 inline crow::json::wvalue params_to_json(const note_model_params_t& params);
@@ -336,4 +338,25 @@ inline note_model_params_t params_from_json(const crow::json::rvalue& j) {
   params.buffer_size = j["buffer_size"].i();
 
   return params;
+}
+
+inline bool note_model_params_t::operator==(note_model_params_t const& other) const
+{
+  return
+    models_path == other.models_path && 
+    height == other.height && 
+    width == other.width && 
+    column_count == other.column_count && 
+    pot_radius == other.pot_radius && 
+    binary_thresh == other.binary_thresh && 
+    train_noise == other.train_noise && 
+    with_note_location == other.with_note_location && 
+    note_map_path == other.note_map_path && 
+    with_tm == other.with_tm && 
+    tm_memory == other.tm_memory && 
+    tm_cell_per_column == other.tm_cell_per_column && 
+    region == other.region && 
+    loudness_coef == other.loudness_coef && 
+    sample_rate == other.sample_rate && 
+    buffer_size == other.buffer_size;
 }

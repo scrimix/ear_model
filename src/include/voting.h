@@ -8,6 +8,8 @@ struct voting_params_t
   int cell_count = 16;
   int context_length = 50;
   float pred_thresh = 0.1;
+
+  bool operator==(voting_params_t const& other) const;
 };
 
 inline crow::json::wvalue voting_params_to_json(voting_params_t const& params)
@@ -30,6 +32,14 @@ inline voting_params_t voting_params_from_json(crow::json::rvalue const& j)
   return result;
 }
 
+inline bool voting_params_t::operator==(voting_params_t const& other) const {
+  return
+    region_count == other.region_count && 
+    cell_count == other.cell_count && 
+    context_length == other.context_length && 
+    pred_thresh == other.pred_thresh;
+}
+
 struct voting_t
 {
   voting_params_t params;
@@ -42,7 +52,7 @@ struct voting_t
   void setup(voting_params_t in_params)
   {
     params = in_params;
-    auto dimensions = std::vector<uint32_t>{uint32_t(note_location_resolution * params.region_count), 1};
+    auto dimensions = std::vector<uint32_t>{note_location_resolution, 1};
     input.initialize(dimensions);
     tm.initialize(dimensions, params.cell_count, 13, 0.21, 0.5, 10, 20, 0.1, 0.1, 0, 42, params.context_length, params.context_length);
     clsr.initialize( /* alpha */ 0.001f);
@@ -50,43 +60,67 @@ struct voting_t
 
   void train(std::vector<uint32_t> const& labels, std::vector<note_location_t> const& notes_per_region)
   {
-    note_sdr.clear();
-    for(auto& note_loc : notes_per_region){
-      auto notes = note_location_to_vec(note_loc);
-      concat(&note_sdr, notes);
-    }
+    // note_sdr.clear();
+    // for(auto& note_loc : notes_per_region){
+    //   auto notes = note_location_to_vec(note_loc);
+    //   concat(&note_sdr, notes);
+    // }
+
+    note_location_t note_sdr_bits;
+    for(auto& region : notes_per_region)
+      note_sdr_bits |= region;
+    note_sdr = note_location_to_vec(note_sdr_bits);
 
     auto sparse_note_sdr = to_sparse_indices(note_sdr);
     input.setSparse(sparse_note_sdr);
+
+    // input.setDense(note_sdr);
+
     input.addNoise(0.05);
-    tm.compute(input, true);
-    tm.activateDendrites();
-    tm_out = tm.cellsToColumns(tm.getPredictiveCells());
-    clsr.learn(tm_out, labels);
+    // tm.compute(input, true);
+    // tm.activateDendrites();
+    // tm_out = tm.cellsToColumns(tm.getPredictiveCells());
+    // clsr.learn(tm_out, labels);
+
+    clsr.learn(input, labels);
   }
 
   std::vector<int> infer(std::vector<note_location_t> const& notes_per_region)
   {
-    note_sdr.clear();
-    for(auto& note_loc : notes_per_region){
-      auto notes = note_location_to_vec(note_loc);
-      concat(&note_sdr, notes);
-    }
+    // note_sdr.clear();
+    // for(auto& note_loc : notes_per_region){
+    //   auto notes = note_location_to_vec(note_loc);
+    //   concat(&note_sdr, notes);
+    // }
+
+    note_location_t note_sdr_bits;
+    for(auto& region : notes_per_region)
+      note_sdr_bits |= region;
+    note_sdr = note_location_to_vec(note_sdr_bits);
+
+
     auto sparse_note_sdr = to_sparse_indices(note_sdr);
     input.setSparse(sparse_note_sdr);
-    tm.compute(input, false);
-    tm.activateDendrites();
-    tm_out = tm.cellsToColumns(tm.getPredictiveCells());
-    auto pdf = clsr.infer(tm_out);
+    // input.setDense(note_sdr);
+
+    // tm.compute(input, false);
+    // tm.activateDendrites();
+    // tm_out = tm.cellsToColumns(tm.getPredictiveCells());
+    // auto pdf = clsr.infer(tm_out);
+
+    auto pdf = clsr.infer(input);
+
     return note_model_t::get_labels(pdf, params.pred_thresh);
   }
 
   void visualize()
   {
+    if(note_sdr.empty())
+      return;
     auto [rows, cols] = square_ish_sdr(note_sdr.size());
     auto note_mat = vector_to_mat(note_sdr, rows, cols);
     show("note_sdr", note_mat);
-    show("voting_tm", sdr1DToColorMapBySlice(tm_out));
+    // show("voting_tm", sdr1DToColorMapBySlice(tm_out));
   }
 
   void save(std::string models_path)

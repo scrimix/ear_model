@@ -4,7 +4,7 @@
 
 static tbt_params_t params = many_eyes;
 
-void accuracy_test(tbt_model_t& tbt)
+void accuracy_test(tbt_model_t& tbt, bool with_voting = false)
 {
   std::string test_dir = "../../dataset/test";
   for(auto file : list_audio_files(test_dir)){
@@ -24,14 +24,14 @@ void accuracy_test(tbt_model_t& tbt)
         skip_some++;
         
         auto true_labels = midi_to_labels(note_image.midi);
-        std::vector<int> voting_preds;
-        auto predictions = tbt.infer(note_image, &voting_preds);
+        auto predictions = tbt.infer(note_image);
         if(skip_some % 10 == 0)
           tbt.visualize(note_image, predictions);
-        stats.update(true_labels, predictions);
-
-        if(tbt.params.use_voting_tm)
+        if(with_voting){
+          auto voting_preds = tbt.infer_voting(note_image);
           voting_stats.update(true_labels, voting_preds);
+        }
+        stats.update(true_labels, predictions);
 
       // std::cout << "sp hist: " << midi_array_to_string(predictions);
       // std::cout << ", voting: " << midi_array_to_string(voting_preds);
@@ -44,7 +44,7 @@ void accuracy_test(tbt_model_t& tbt)
   }
 }
 
-void train_tbt()
+void train_tbt_regions()
 {
   tbt_model_t tbt;
   
@@ -52,8 +52,8 @@ void train_tbt()
     tbt.setup(params, true);
   }
   else {
-    tbt.setup(params, false);
-    tbt.load();
+    tbt.params.core.models_path = params.core.models_path;
+    tbt.loadv2();
   }
 
   auto root = "../../dataset/"s;
@@ -87,23 +87,75 @@ void train_tbt()
       std::cout << "\n";
 
       tbt.save();
-      break;
+      // break;
     }
     accuracy_test(tbt);
-    break;
+    // break;
+  }
+}
+
+
+void train_tbt_voting()
+{
+  tbt_model_t tbt;
+  
+  if(!fs::exists(params.core.models_path)){
+    tbt.setup(params, true);
+  }
+  else {
+    tbt.params.core.models_path = params.core.models_path;
+    tbt.loadv2();
+  }
+
+  auto root = "../../dataset/"s;
+  std::vector<std::string> dirs = params.voting_dirs;
+  for(auto& dir : dirs)
+    dir = root + dir;
+
+  for(auto dir : dirs){
+    for(auto file : list_audio_files(dir)){
+      std::cout << "loading file: " << file << std::endl;
+
+      if(check_and_gen_if_midi(file))
+        file = "midi_train.wav";
+
+      tbt.core.load_audio_file_and_notes(file);
+      tbt.reset_tms();
+      while(tbt.core.carfac_reader.get_render_pos() < tbt.core.audio.total_bytes()){
+        auto note_image = tbt.core.carfac_reader.next();
+
+        static int64_t skip_some = 0;
+        skip_some++;
+
+        tbt.train_voting(note_image);
+        
+        if(skip_some % 9 == 0)
+          tbt.visualize(note_image);
+
+        std::cout << "\rstep... " << tbt.core.audio_progress() << "%";
+        std::cout.flush();
+      }
+      std::cout << "\n";
+
+      tbt.save_voting();
+      // break;
+    }
+    accuracy_test(tbt, true);
+    // break;
   }
 }
 
 void test_tbt()
 {
   tbt_model_t tbt;
-  tbt.setup(params, false);
-  tbt.load();
-  accuracy_test(tbt);
+  tbt.params.core.models_path = params.core.models_path;
+  tbt.loadv2();
+  accuracy_test(tbt, true);
 }
 
 int main()
 {
-  train_tbt();
+  // train_tbt_regions();
+  // train_tbt_voting();
   test_tbt();
 }
