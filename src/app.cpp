@@ -1,5 +1,6 @@
 #include "wav_to_midi.h"
 #include "midi_to_wav.h"
+#include "tbt_model.h"
 
 #define CROW_JSON_USE_MAP
 #include "crow.h"
@@ -8,10 +9,10 @@ using namespace std::literals;
 
 struct av_packet_t
 {
-    cv::Mat carfac;
-    cv::Mat input;
-    cv::Mat columns;
-    cv::Mat tm;
+    cv::Mat sai;
+    cv::Mat activations;
+    cv::Mat voting;
+
     std::vector<float> wav;
     double ts = 0; // in seconds
 
@@ -25,10 +26,9 @@ struct av_packet_t
     crow::json::wvalue to_json_images() const
     {
         crow::json::wvalue result = {{"type", "avpacket"}};
-        result["value"]["carfac"] = mat_to_base64(carfac);
-        result["value"]["input"] = mat_to_base64(input);
-        result["value"]["columns"] = mat_to_base64(columns);
-        result["value"]["tm"] = mat_to_base64(tm);
+        result["value"]["sai"] = mat_to_base64(sai);
+        result["value"]["activations"] = mat_to_base64(activations);
+        result["value"]["voting"] = mat_to_base64(voting);
         result["value"]["ts"] = ts;
         return result;
     }
@@ -45,11 +45,10 @@ struct av_packet_t
 struct runner_t
 {
     midi_labeler_t labeler;
-    note_model_params_t params;
-    note_model_t model;
     av_packet_t last_packet;
-    
-    uint prev_pred = 0;
+
+    std::map<std::string, ptr<tbt_model_t>> models;
+    std::string current_model;
 
     runner_t()
     {
@@ -58,51 +57,75 @@ struct runner_t
 
     void load_model()
     {
-        // params.models_path = "../../models/carfac_latest";
-        // params.models_path = "../../stable_models/fenrir/fenrir";
+        auto models_dir = "../../stable_models"s;
+        for(auto model_dir : fs::directory_iterator(models_dir)){
+            if(model_dir.path().stem().string().starts_with("."))
+                continue;
+            auto model = std::make_shared<tbt_model_t>();
+            model->params.core.models_path = model_dir.path();
+            model->loadv2();
+            models[fs::path(model_dir).stem()] = model;
+        }
 
-        params.models_path = "../../stable_models/greedy/greedy";
-        params.note_map_path = "../../stable_models/note_map.txt";
-        params.with_note_location = true;
+        if(models.empty()){
+            std::cerr << "Failed to load models from: " << models_dir << "!!!" << std::endl;
+            std::exit(1);
+        }
 
-        model.setup(params);
-        model.load();
+        current_model = models.begin()->first;
+    }
+
+    std::vector<std::string> get_model_names() const
+    {
+        std::vector<std::string> result;
+        for(auto& [key, v] : models)
+            result.push_back(key);
+        return result;
     }
 
     void load_audio(std::vector<float> wav)
     {
-        model.load_audio(wav);
-        model.tm.reset();
+        auto model = models.at(current_model);
+        model->core.load_audio(wav);
+        model->reset_tms();
         labeler.reset();
     }
 
     void load_midi(std::string file_path)
     {
-        model.load_audio_file_and_notes(file_path+".wav");
-        model.tm.reset();
+        auto model = models.at(current_model);
+        model->core.load_audio_file_and_notes(file_path+".wav");
+        model->reset_tms();
         labeler.reset();
     }
 
-    bool is_finished() const { return model.carfac_reader.get_render_pos() >= model.audio.total_bytes(); }
-    float progress() const { return std::min(100.f, model.carfac_reader.get_render_pos() / float(model.audio.total_bytes()) * 100); }
+    bool is_finished() const {
+        auto model = models.at(current_model);
+        return model->core.carfac_reader.get_render_pos() >= model->core.audio.total_bytes();
+    }
+    float progress() const {
+        auto model = models.at(current_model);
+        return std::min(100.f, model->core.carfac_reader.get_render_pos() / float(model->core.audio.total_bytes()) * 100);
+    }
 
-    av_packet_t get_packet(note_image_t& note_image, uint pred_midi)
+    av_packet_t get_packet(note_image_t& note_image, std::vector<int> pred_midi)
     {
+        auto model = models.at(current_model);
+
         av_packet_t result;
-        result.columns = sdr3DToColorMap(model.columns);
-        result.tm = sdr3DToColorMap(model.outTM);
-        result.input = model.input_image.clone();
-    
+        result.activations = model->get_activations_image();
+        result.voting = model->voting.get_voting_image();
+
         draw_notes_as_keys(note_image);
-        if(pred_midi > 0){
-            if(prev_pred == pred_midi){
-                note_image.midi.clear();
-                note_image.midi.push_back(str_note_event_t::from_int(pred_midi));
-                draw_notes_as_keys(note_image, note_image.mat.rows - 30);
-            }
-            prev_pred = pred_midi;
+        model->draw_regions(note_image);
+        if(!pred_midi.empty() && pred_midi != std::vector<int>{0}){
+            note_image.midi.clear();
+            for(auto& note : pred_midi)
+                note_image.midi.push_back(str_note_event_t::from_int(note));
+            draw_notes_as_keys(note_image, note_image.mat.rows - 30);
         }
-        result.carfac = note_image.mat;
+        result.sai = note_image.mat;
+
         result.wav = note_image.wav_chunk;
         result.ts = note_image.midi_ts / 1000.;
 
@@ -113,15 +136,21 @@ struct runner_t
     {
         if(is_finished())
             return;
-        auto note_image = model.carfac_reader.next();
+
+        auto model = models.at(current_model);
+        auto note_image = model->core.carfac_reader.next();
+
+        std::vector<int> pred_midi;
+
+        if(!model->params.use_voting_tm)
+            pred_midi = model->infer(note_image);
+        else
+            pred_midi = model->infer_voting(note_image);
         
-        auto labels = midi_to_labels(note_image.midi);
-        model.feedforward(note_image.mat, {uint(random_midi_note())}, false);
-        auto pdf = model.clsr.infer(model.outTM);
-        auto preds = note_model_t::get_labels(pdf, 0.3);
-        auto pred_midi = preds.empty() ? 0 : preds.at(0);
-        if(!preds.empty())
-            labeler.add_new(pred_midi, note_image.midi_ts);
+        if(!pred_midi.empty()){
+            for(auto note : pred_midi)
+                labeler.add_new(note, note_image.midi_ts);
+        }
         else
             labeler.skip();
 
@@ -129,10 +158,16 @@ struct runner_t
             last_packet = get_packet(note_image, pred_midi);
     }
 
+    std::vector<float> get_full_audio()
+    {
+        auto model = models.at(current_model);
+        return model->core.audio.buffer;
+    }
+
     void reset()
     {
-        model.carfac_reader.reset();
-        model.tm.reset();
+        for(auto [model_name, model] : models)
+            model->reset();
         labeler.reset();
     }
 };
@@ -232,6 +267,42 @@ void run_web_app() {
         return res.end();
     });
 
+    CROW_ROUTE(app, "/model_names").methods("GET"_method)([&](const crow::request& req, crow::response& res){
+        res.set_header("Content-Type", "application/json");
+        crow::json::wvalue v;
+        v = runner.get_model_names();
+        res.body = v.dump();
+        return res.end();
+    });
+
+    CROW_ROUTE(app, "/get_current_model").methods("GET"_method)([&](const crow::request& req, crow::response& res){
+        res.set_header("Content-Type", "application/json");
+        crow::json::wvalue v;
+        v = runner.current_model;
+        res.body = v.dump();
+        return res.end();
+    });
+
+    CROW_ROUTE(app, "/set_model").methods("GET"_method)([&](const crow::request& req, crow::response& res){
+        try{
+            auto js = crow::json::load(req.body);
+            auto model_name = js.s();
+            if(!runner.models.contains(model_name)){
+                res.code = 415;
+                res.write("Expected valid model name");
+            }
+            else{
+                runner.reset();
+                runner.current_model = model_name;
+            }
+        }
+        catch(std::exception& e){
+            res.code = 415;
+            res.write("Expected valid model name");
+        }
+        return res.end();
+    });
+
     CROW_ROUTE(app, "/audio_test").methods("GET"_method)([](const crow::request& req, crow::response& res){
         res.set_header("Content-Type", "text/html");
         res.body = read_text_file("../web/audio_test.html");
@@ -264,7 +335,7 @@ void run_web_app() {
     std::atomic_bool demo_paused = false;
     std::atomic_bool stop_demo = false;
     std::atomic_int64_t packet_counter = 0;
-    const int buffering_packets = 20;
+    const int buffering_packets = int(2.5 / (1024./44100.));
     std::thread demo;
     smf::MidiFile midi_file;
     std::atomic_bool is_midi_demo = false;
@@ -304,16 +375,24 @@ void run_web_app() {
                 runner.load_midi("./midi_demo");
             demo_paused = false;
             packet_counter = 0;
-            messenger.send_song(runner.model.audio.buffer);
+
+            messenger.send_song(runner.get_full_audio());
             while(!stop_demo && !runner.is_finished()){
+                using namespace std::chrono;
+                auto start = high_resolution_clock::now();
                 runner.step(true);
                 messenger.send_packet(runner.last_packet);
                 if(++packet_counter > buffering_packets){
+                    auto end = high_resolution_clock::now();
+                    auto elapsed = duration_cast<milliseconds>(end - start).count();
+                    std::cout << "it took: " << elapsed << " ms ";
+                    std::cout << "to generate: " << buffering_packets << " packets ";
+                    std::cout << "last_ts: " << runner.last_packet.ts << std::endl;
                     demo_paused = true;
                     packet_counter = 0;
                     messenger.send_demo_pause();
                     while(!stop_demo && demo_paused && messenger.client_count() > 0){
-                        std::this_thread::sleep_for(10ms);
+                        std::this_thread::sleep_for(1ms);
                     }
                 }
             }

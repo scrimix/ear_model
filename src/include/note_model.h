@@ -146,33 +146,26 @@ public:
     clsr.save_ar(oarchive2);
     dump2.close();
 
-    ofstream dump3(model_name+"_tm.model", ofstream::binary | ofstream::trunc | ofstream::out);
-    cereal::BinaryOutputArchive oarchive3(dump3);
-    tm.save_ar(oarchive3);
-    dump3.close();
+    if(params.with_tm){
+      ofstream dump3(model_name+"_tm.model", ofstream::binary | ofstream::trunc | ofstream::out);
+      cereal::BinaryOutputArchive oarchive3(dump3);
+      tm.save_ar(oarchive3);
+      dump3.close();
+    }
   }
 
   bool load(std::string model_name)
   {
-    if(!std::filesystem::exists(model_name+"_sp.model")){
-      std::cerr << "note_model_t | loading model: " << model_name << " failed! File doesn't exist";
+    if(!load_model_with_check(sp, model_name+"_sp.model"))
       return false;
+
+    if(!load_model_with_check(clsr, model_name+"_clsr.model"))
+      return false;
+
+    if(params.with_tm){
+      if(!load_model_with_check(tm, model_name+"_tm.model"))
+        return false;
     }
-
-    std::ifstream in(model_name+"_sp.model", std::ios_base::in | std::ios_base::binary);
-    cereal::BinaryInputArchive iarchive(in);
-    sp.load_ar(iarchive);
-    in.close();
-
-    std::ifstream in2(model_name+"_clsr.model", std::ios_base::in | std::ios_base::binary);
-    cereal::BinaryInputArchive iarchive2(in2);
-    clsr.load_ar(iarchive2);
-    in2.close();
-
-    std::ifstream in3(model_name+"_tm.model", std::ios_base::in | std::ios_base::binary);
-    cereal::BinaryInputArchive iarchive3(in3);
-    tm.load_ar(iarchive3);
-    in3.close();
 
     return true;
   }

@@ -4,6 +4,7 @@
 #include "region_split.h"
 #include "crow.h"
 #include "voting.h"
+#include <semaphore>
 
 template <typename T>
 using ptr = std::shared_ptr<T>;
@@ -78,16 +79,12 @@ struct tbt_model_t
     core.tm.reset();
     for(auto& model : models)
       model->tm.reset();
+    voting.tm.reset();
   }
 
   void train(note_image_t& note_image)
   {
-    auto labels_int = midi_to_labels(note_image.midi);
-    std::vector<uint32_t> labels(labels_int.begin(), labels_int.end());
-    auto label = labels.empty() ? 0 : labels.at(0);
-    std::sort(labels.begin(), labels.end());
-    if(labels.empty())
-      labels.push_back(0);
+    auto labels = get_labels(note_image);
 
     auto train_step = [&](auto i){
       auto model = models.at(i);
@@ -108,7 +105,7 @@ struct tbt_model_t
       task.get();
   }
 
-  void train_voting(note_image_t& note_image)
+  std::vector<uint32_t> get_labels(note_image_t const& note_image)
   {
     auto labels_int = midi_to_labels(note_image.midi);
     std::vector<uint32_t> labels(labels_int.begin(), labels_int.end());
@@ -116,20 +113,40 @@ struct tbt_model_t
     std::sort(labels.begin(), labels.end());
     if(labels.empty())
       labels.push_back(0);
+    return labels;
+  }
+
+  std::vector<note_location_t> get_votes(note_image_t& note_image)
+  {
+    auto region_preds = infer_many(note_image);
 
     std::vector<note_location_t> notes_per_region;
-    for(auto i = 0; i < models.size(); i++){
+    for(auto i = 0; i < region_preds.size(); i++){
       note_location_t note_set;
-      auto pred = infer_step(models.at(i), note_image);
-      for(auto& note : pred)
-        note_set |= encode_note_shifted(note, i);
-        //  note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
-    //   auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
+      
+      // each note is the same sdr pattern, but region shifts by 1
+      // for(auto& note : pred)
+      //   note_set |= encode_note_shifted(note, i);
+      // if(!note_set.any())
+      //   note_set = encode_note_shifted(0, i);
+
+      for(auto& note : region_preds.at(i))
+        note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
       if(!note_set.any())
-        note_set = encode_note_shifted(0, i);
+        note_set = encode_note_region_bucketed(0, i, 128, models.size(), note_location_resolution*0.003);
+
+      //  note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
+      //  auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
+
       notes_per_region.push_back(note_set);
     }
-    voting.train(labels, notes_per_region);
+
+    return notes_per_region;
+  }
+
+  void train_voting(note_image_t& note_image)
+  {
+    voting.train(get_labels(note_image), get_votes(note_image));
   }
 
   std::vector<int> infer_step(ptr<note_model_t> model, note_image_t const& note_image) {
@@ -140,28 +157,31 @@ struct tbt_model_t
       pdf = model->clsr.infer(model->outTM);
     else
       pdf = model->clsr.infer(model->columns);
-    auto result = note_model_t::get_labels(pdf, params.pred_thresh);
-    result.erase(std::remove(result.begin(), result.end(), 0), result.end());
-    return result;
+    return remove_zero(note_model_t::get_labels(pdf, params.pred_thresh));
   }
 
-  std::vector<int> infer(note_image_t& note_image){
-    auto labels = midi_to_labels(note_image.midi);
-    auto label = labels.empty() ? 0 : labels.at(0);
-    std::sort(labels.begin(), labels.end());
-    if(labels.empty())
-      labels.push_back(0);
-
+  std::vector<std::vector<int>> infer_many(note_image_t const& note_image)
+  {
+    std::counting_semaphore<8> thread_limit(8);
     std::vector<std::future<std::vector<int>>> tasks;
-    for(auto model : models)
-      tasks.push_back(std::async(std::launch::async, std::bind(&tbt_model_t::infer_step, this, model, note_image)));
-    
-    std::vector<std::vector<int>> midi_preds;
+    for(auto model : models){
+      thread_limit.acquire();
+      tasks.push_back(std::async(std::launch::async, [&, model]{
+        auto result = this->infer_step(model, note_image);
+        thread_limit.release();
+        return result;
+      }));
+    }
+    std::vector<std::vector<int>> region_preds;
     for (auto& task : tasks)
-      midi_preds.push_back(task.get());
+      region_preds.push_back(task.get());
+    return region_preds;
+  }
 
+  std::vector<int> hist_voting(std::vector<std::vector<int>> const& region_preds)
+  {
     std::map<int, int> midi_hist;
-    for(auto& model_result : midi_preds){
+    for(auto& model_result : region_preds){
       for(auto& label_idx : model_result)
         midi_hist[label_idx]++;
     }
@@ -171,43 +191,55 @@ struct tbt_model_t
       if(repeats > params.vote_repeats)
         result.push_back(label_idx);
 
-    result.erase(std::remove(result.begin(), result.end(), 0), result.end());
-    return result;
+    return remove_zero(result);
+  }
+
+  std::vector<int> infer(note_image_t const& note_image){
+    auto labels = get_labels(note_image);
+    using namespace std::chrono;
+
+    auto region_preds = infer_many(note_image);
+
+    auto start_ts = high_resolution_clock::now();
+    
+    auto end_ts = high_resolution_clock::now();
+    auto elapsed = duration_cast<milliseconds>(end_ts - start_ts);
+    std::cout << "basic_infer: " << elapsed.count() << " ms" << std::endl;
+
+    return hist_voting(region_preds);
   }
 
   std::vector<int> infer_voting(note_image_t& note_image)
   {
-    std::vector<note_location_t> notes_per_region;
-    for(auto i = 0; i < models.size(); i++){
-      // auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
-      note_location_t note_set;
-      auto pred = infer_step(models.at(i), note_image);
-      for(auto& note : pred)
-        note_set |= encode_note_shifted(note, i);
-        // note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
-
-      if(!note_set.any())
-        note_set = encode_note_shifted(0, i);
-      notes_per_region.push_back(note_set);
-    }
-    auto voting_result = voting.infer(notes_per_region);
-    voting_result.erase(std::remove(voting_result.begin(), voting_result.end(), 0), voting_result.end());
-    return voting_result;
+    auto votes = get_votes(note_image);
+    auto result = remove_zero(voting.infer(votes));
+    return result;
   }
 
-  void visualize(note_image_t& note_image, std::vector<int> pred_midi = {})
+  void draw_regions(note_image_t& note_image)
   {
-    core.draw_notes(note_image, pred_midi);
-    
+    for(auto& model : models)
+      cv::rectangle(note_image.mat, model->params.region, cv::Scalar(80,80,80), 2);
+  }
+
+  cv::Mat get_activations_image()
+  {
     std::vector<cv::Mat> nn_vis;
     auto images_per_nn = 3;
     for(auto& model : models){
       auto model_vis = model->get_visualizations();
       concat(&nn_vis, model_vis);
       images_per_nn = model_vis.size();
-      cv::rectangle(note_image.mat, model->params.region, cv::Scalar(80,80,80), 2);
     }
     auto nn_mat = tileImages(nn_vis, sqrt(nn_vis.size()), 15);
+    return nn_mat;
+  }
+
+  void visualize(note_image_t& note_image, std::vector<int> pred_midi = {})
+  {
+    core.draw_notes(note_image, pred_midi);
+    draw_regions(note_image);
+    auto nn_mat = get_activations_image();
 
     show("SAI", note_image.mat);
     show("activations", nn_mat);
@@ -251,15 +283,20 @@ struct tbt_model_t
 
   void loadv2()
   {
+    auto full_path = params.core.models_path;
     params = tbt_params_from_json(crow::json::load(read_text_file(params.core.models_path+"/main_params.json")));
+    params.core.models_path = full_path;
     if(params.core.with_note_location && !params.use_voting_tm)
       core.note_map = read_note_map_from_file(params.core.models_path+"/note_map.txt");
     setup(params, true);
 
+    std::counting_semaphore<8> thread_limit(8);
     std::vector<std::future<void>> tasks;
     for(auto model : models){
-      tasks.push_back(std::async(std::launch::async, [model]{ 
+      thread_limit.acquire();
+      tasks.push_back(std::async(std::launch::async, [&thread_limit, model]{ 
         model->load();
+        thread_limit.release();
       }));
     }
     for(auto& task : tasks)
@@ -279,6 +316,8 @@ struct tbt_model_t
     }
   }
 
+  // segfaults, something is not right
+  // something to do with setup + load sequence??
   void load(){
     params = tbt_params_from_json(crow::json::load(read_text_file(params.core.models_path+"/main_params.json")));
     if(params.core.with_note_location && !params.use_voting_tm)
@@ -333,6 +372,12 @@ struct tbt_model_t
         voting.setup(params.voting_params);
       }
     }
+  }
+
+  void reset()
+  {
+    reset_tms();
+    core.carfac_reader.reset();
   }
 
 };

@@ -337,3 +337,23 @@ inline std::pair<int, int> square_ish_sdr(int size)
     int cols = static_cast<int>(std::ceil(static_cast<double>(size) / rows));
     return {rows, cols};
 }
+
+template <typename T>
+std::vector<T> remove_zero(std::vector<T> input)
+{
+    input.erase(std::remove(input.begin(), input.end(), 0), input.end());
+    return input;
+}
+
+template <typename Model>
+bool load_model_with_check(Model& model, std::string const& file_path){
+    if(!std::filesystem::exists(file_path)){
+      std::cerr << "loading model: " << file_path << " failed! File doesn't exist";
+      return false;
+    }
+    std::ifstream in(file_path, std::ios_base::in | std::ios_base::binary);
+    cereal::BinaryInputArchive iarchive(in);
+    model.load_ar(iarchive);
+    in.close();
+    return true;
+}

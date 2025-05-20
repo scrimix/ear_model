@@ -7,7 +7,9 @@ static tbt_params_t params = many_eyes;
 void accuracy_test(tbt_model_t& tbt, bool with_voting = false)
 {
   std::string test_dir = "../../dataset/test";
-  for(auto file : list_audio_files(test_dir)){
+  auto files = list_audio_files(test_dir);
+  std::sort(files.begin(), files.end());
+  for(auto file : files){
     std::cout << "loading file: " << file << std::endl;
     
     if(check_and_gen_if_midi(file))
@@ -150,12 +152,13 @@ void test_tbt()
   tbt_model_t tbt;
   tbt.params.core.models_path = params.core.models_path;
   tbt.loadv2();
-  accuracy_test(tbt, true);
+  accuracy_test(tbt, params.use_voting_tm);
 }
 
 int main()
 {
   // train_tbt_regions();
-  // train_tbt_voting();
+  // if(params.use_voting_tm)
+  //   train_tbt_voting();
   test_tbt();
 }

@@ -87,18 +87,11 @@ struct voting_t
 
   std::vector<int> infer(std::vector<note_location_t> const& notes_per_region)
   {
-    // note_sdr.clear();
-    // for(auto& note_loc : notes_per_region){
-    //   auto notes = note_location_to_vec(note_loc);
-    //   concat(&note_sdr, notes);
-    // }
-
     note_location_t note_sdr_bits;
     for(auto& region : notes_per_region)
       note_sdr_bits |= region;
     note_sdr = note_location_to_vec(note_sdr_bits);
-
-
+    
     auto sparse_note_sdr = to_sparse_indices(note_sdr);
     input.setSparse(sparse_note_sdr);
     // input.setDense(note_sdr);
@@ -113,13 +106,18 @@ struct voting_t
     return note_model_t::get_labels(pdf, params.pred_thresh);
   }
 
-  void visualize()
+  cv::Mat get_voting_image()
   {
     if(note_sdr.empty())
-      return;
+      return {};
     auto [rows, cols] = square_ish_sdr(note_sdr.size());
     auto note_mat = vector_to_mat(note_sdr, rows, cols);
-    show("note_sdr", note_mat);
+    return note_mat;
+  }
+
+  void visualize()
+  {
+    show("note_sdr", get_voting_image());
     // show("voting_tm", sdr1DToColorMapBySlice(tm_out));
   }
 
@@ -132,28 +130,26 @@ struct voting_t
     clsr.save_ar(oarchive2);
     dump2.close();
 
-    ofstream dump3(models_path+"_tm.model", ofstream::binary | ofstream::trunc | ofstream::out);
-    cereal::BinaryOutputArchive oarchive3(dump3);
-    tm.save_ar(oarchive3);
-    dump3.close();
+    // ofstream dump3(models_path+"_tm.model", ofstream::binary | ofstream::trunc | ofstream::out);
+    // cereal::BinaryOutputArchive oarchive3(dump3);
+    // tm.save_ar(oarchive3);
+    // dump3.close();
   }
 
   bool load(std::string models_path)
   {
-    if(!std::filesystem::exists(models_path+"_tm.model")){
-      std::cerr << "voting_t | loading model: " << models_path << " failed! File doesn't exist";
+    if(!load_model_with_check(clsr, models_path+"_clsr.model"))
       return false;
-    }
 
-    std::ifstream in2(models_path+"_clsr.model", std::ios_base::in | std::ios_base::binary);
-    cereal::BinaryInputArchive iarchive2(in2);
-    clsr.load_ar(iarchive2);
-    in2.close();
+    // if(!std::filesystem::exists(models_path+"_tm.model")){
+    //   std::cerr << "voting_t | loading model: " << models_path << " failed! File doesn't exist";
+    //   return false;
+    // }
+    // std::ifstream in3(models_path+"_tm.model", std::ios_base::in | std::ios_base::binary);
+    // cereal::BinaryInputArchive iarchive3(in3);
+    // tm.load_ar(iarchive3);
+    // in3.close();
 
-    std::ifstream in3(models_path+"_tm.model", std::ios_base::in | std::ios_base::binary);
-    cereal::BinaryInputArchive iarchive3(in3);
-    tm.load_ar(iarchive3);
-    in3.close();
     return true;
   }
 };

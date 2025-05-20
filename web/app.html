@@ -225,11 +225,15 @@
   <div class="drop-zone" id="dropZone">Drop file here</div>
   <input type="file" id="fileInput">
   <div class="demo-zone" id="demoZone" style="display: none; margin: 10px;">
-    <img id="carfac-img" class="main-img" />
+    <div style="display: inline-block">
+      <p>Stable Auditory Image</p>
+      <img id="sai-img" class="main-img" />
+    </div>
     <div id="side-imgs" class="side-img-container">
-      <img id="input-img" class="side-img" />
-      <img id="columns-img" class="side-img" />
-      <img id="tm-img" class="side-img" />
+      <p>Region + SpatialPooler</p>
+      <img id="activations-img" class="side-img" />
+      <p>Voting SDR</p>
+      <img id="voting-img" class="side-img" />
     </div>
   </div>
   <button id="actionBtn">Convert</button>
@@ -243,6 +247,26 @@
   <div id="progress" class="progress-container" style="display:none;">
     <div class="loader"></div>
     <div id="progressText">Progress: 0%</div>
+  </div>
+  <div id="debugPanel" style="
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    font-family: monospace;
+    font-size: 0.85rem;
+    padding: 10px;
+    border-radius: 8px;
+    z-index: 1000;
+    max-width: 250px;
+    display: none;
+  ">
+    <div>⏱️ <b>Audio</b>: <span id="audioTime">0.000</span>s</div>
+    <div>🖼️ <b>Image</b>: <span id="imageTime">0.000</span>s</div>
+    <div>⏳ <b>Lag</b>: <span id="lagValue">0</span> ms</div>
+    <div>📦 <b>Queue</b>: <span id="queueSize">0</span></div>
+    <div>⏯️ <b>Paused</b>: <span id="pausedState">false</span></div>
   </div>
 </body>
 
@@ -328,12 +352,11 @@
         actionBtn.textContent = "Pause";
         return;
       }
-      console.log('Starting demo...');
       demoZone.style.display = "flex";
       dropZone.style.display = "none";
       actionBtn.textContent = "Pause";
       newestImageTime = 0;
-      packet_reqester = setInterval(update_playback, 10);
+      packet_reqester = setInterval(update_playback, 1);
       audio_started = false;
       demo_is_done = false;
       updateGainView();
@@ -370,6 +393,27 @@
 
   updateButton();
 
+  // fixing memory leak
+  const previousImageUrls = {
+    sai: null,
+    activations: null,
+    voting: null
+  };
+  function b64ToBlob(b64Data, contentType = '', sliceSize = 512) {
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+      const slice = byteCharacters.slice(offset, offset + sliceSize);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      byteArrays.push(new Uint8Array(byteNumbers));
+    }
+
+    return new Blob(byteArrays, { type: contentType });
+  }
 
   async function update_playback() {
     if (demo_is_done) {
@@ -393,8 +437,18 @@
       return;
     }
 
-    // waiting for first second of images to buffer
-    if (newestImageTime < 1) {
+    const audioNow = audioCtx?.currentTime ? (audioCtx.currentTime - groundZeroTime) : 0;
+    const lagMs = Math.round((audioNow - newestImageTime) * 1000);
+
+    document.getElementById('audioTime').textContent = audioNow.toFixed(3);
+    document.getElementById('imageTime').textContent = newestImageTime.toFixed(3);
+    document.getElementById('lagValue').textContent = lagMs;
+    document.getElementById('queueSize').textContent = image_packets.length;
+    document.getElementById('pausedState').textContent = packets_paused;
+
+    // waiting for first 1 seconds of images to buffer
+    if (newestImageTime < 2) {
+      console.log("waiting for buffering... ", newestImageTime);
       if (packets_paused) {
         ws.send(JSON.stringify({ "type": "demo_state", "value": "continue" }));
         packets_paused = false;
@@ -421,19 +475,32 @@
       audio_started = true;
     }
 
-    if (packets_paused && newestImageTime - (audioCtx.currentTime - groundZeroTime) < 0.5) {
+    if (packets_paused && newestImageTime - (audioCtx.currentTime - groundZeroTime) < 1) {
       ws.send(JSON.stringify({ "type": "demo_state", "value": "continue" }));
       packets_paused = false;
     }
 
     while (image_packets.length > 0 && image_packets[0].value.ts < (audioCtx.currentTime - groundZeroTime)) {
-      // Update images
       const msg = image_packets.shift();
-      document.getElementById('carfac-img').src = `data:image/jpeg;base64,${msg.value.carfac}`;
-      document.getElementById('input-img').src = `data:image/jpeg;base64,${msg.value.input}`;
-      document.getElementById('columns-img').src = `data:image/jpeg;base64,${msg.value.columns}`;
-      document.getElementById('tm-img').src = `data:image/jpeg;base64,${msg.value.tm}`;
+
+      function updateImg(id, base64, key) {
+        const blob = b64ToBlob(base64, 'image/jpeg');
+        const newUrl = URL.createObjectURL(blob);
+        const imgEl = document.getElementById(id);
+
+        if (previousImageUrls[key]) {
+          URL.revokeObjectURL(previousImageUrls[key]);
+        }
+
+        previousImageUrls[key] = newUrl;
+        imgEl.src = newUrl;
+      }
+
+      updateImg('sai-img', msg.value.sai, 'sai');
+      updateImg('activations-img', msg.value.activations, 'activations');
+      updateImg('voting-img', msg.value.voting, 'voting');
     }
+
   }
 
 
@@ -467,7 +534,6 @@
       if (msg.type == "avpacket") {
         image_packets.push(msg);
         newestImageTime = msg.value.ts;
-        console.log(newestImageTime);
       }
 
       if (msg.type == "demo_state") {
