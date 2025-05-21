@@ -9,6 +9,8 @@
 template <typename T>
 using ptr = std::shared_ptr<T>;
 
+static constexpr int LOADING_THREADS = 8;
+
 struct tbt_params_t 
 {
   note_model_params_t core;
@@ -17,6 +19,7 @@ struct tbt_params_t
   std::vector<std::string> voting_dirs;
 
   bool use_voting_tm = false;
+  bool limit_region_notes = false;
   voting_params_t voting_params;
   int vote_repeats = 0;
   float pred_thresh = 0.1;
@@ -38,9 +41,15 @@ struct tbt_model_t
 
   void setup_models()
   {
+    std::counting_semaphore<LOADING_THREADS> thread_limit(LOADING_THREADS);
     std::vector<std::future<void>> tasks;
-    for(auto& model : models)
-      tasks.push_back(std::async(std::launch::async, [model]{ model->setup(model->params); }));
+    for(auto& model : models){
+      thread_limit.acquire();
+      tasks.push_back(std::async(std::launch::async, [&, model]{
+        model->setup(model->params);
+        thread_limit.release();
+      }));
+    }
     for(auto& task : tasks)
       task.get();
   }
@@ -89,12 +98,16 @@ struct tbt_model_t
     auto train_step = [&](auto i){
       auto model = models.at(i);
       auto img = note_image.mat(model->params.region);
+
       model->feedforward(img, labels, true);
       if(core.carfac_reader.total_note_count() != 0){
+        auto local_labels = labels;
+        if(params.limit_region_notes)
+          local_labels = labels_to_region_specific(labels, model->params.region, note_image.mat.size());
         if(model->params.with_tm)
-          model->clsr.learn(model->outTM, labels);
+          model->clsr.learn(model->outTM, local_labels);
         else
-          model->clsr.learn(model->columns, labels);
+          model->clsr.learn(model->columns, local_labels);
       }
     };
 
@@ -119,29 +132,7 @@ struct tbt_model_t
   std::vector<note_location_t> get_votes(note_image_t& note_image)
   {
     auto region_preds = infer_many(note_image);
-
-    std::vector<note_location_t> notes_per_region;
-    for(auto i = 0; i < region_preds.size(); i++){
-      note_location_t note_set;
-      
-      // each note is the same sdr pattern, but region shifts by 1
-      // for(auto& note : pred)
-      //   note_set |= encode_note_shifted(note, i);
-      // if(!note_set.any())
-      //   note_set = encode_note_shifted(0, i);
-
-      for(auto& note : region_preds.at(i))
-        note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
-      if(!note_set.any())
-        note_set = encode_note_region_bucketed(0, i, 128, models.size(), note_location_resolution*0.003);
-
-      //  note_set |= encode_note_region_bucketed(note, i, 128, models.size(), note_location_resolution*0.003);
-      //  auto pred = midi_pred_to_location(model->note_map, infer_step(model, note_image));
-
-      notes_per_region.push_back(note_set);
-    }
-
-    return notes_per_region;
+    return voting.region_preds_to_location(region_preds);
   }
 
   void train_voting(note_image_t& note_image)
@@ -157,7 +148,10 @@ struct tbt_model_t
       pdf = model->clsr.infer(model->outTM);
     else
       pdf = model->clsr.infer(model->columns);
-    return remove_zero(note_model_t::get_labels(pdf, params.pred_thresh));
+    auto labels = note_model_t::get_labels(pdf, params.pred_thresh);
+    if(params.limit_region_notes)
+      labels = labels_from_region_to_global(labels, model->params.region, note_image.mat.size());
+    return remove_zero(labels);
   }
 
   std::vector<std::vector<int>> infer_many(note_image_t const& note_image)
@@ -196,16 +190,7 @@ struct tbt_model_t
 
   std::vector<int> infer(note_image_t const& note_image){
     auto labels = get_labels(note_image);
-    using namespace std::chrono;
-
     auto region_preds = infer_many(note_image);
-
-    auto start_ts = high_resolution_clock::now();
-    
-    auto end_ts = high_resolution_clock::now();
-    auto elapsed = duration_cast<milliseconds>(end_ts - start_ts);
-    std::cout << "basic_infer: " << elapsed.count() << " ms" << std::endl;
-
     return hist_voting(region_preds);
   }
 
@@ -218,8 +203,27 @@ struct tbt_model_t
 
   void draw_regions(note_image_t& note_image)
   {
+    auto is_active = [&](auto model){
+      if(!params.limit_region_notes)
+        return false;
+      auto region = model->params.region;
+      auto image_size = note_image.mat.size();
+      auto [midi_low, midi_high] = get_midi_range_for_region(region.y, region.height, image_size.height);
+      for(auto& note : note_image.midi)
+        if(note.to_midi_int() >= midi_low && note.to_midi_int() <= midi_high)
+          return true;
+      return false;
+    };
+
+    auto get_color = [&](auto model){
+      if(is_active(model))
+        return cv::Scalar(50,50,150);
+      else
+        return cv::Scalar(30,30,30);
+    };
+
     for(auto& model : models)
-      cv::rectangle(note_image.mat, model->params.region, cv::Scalar(80,80,80), 2);
+      cv::rectangle(note_image.mat, model->params.region, get_color(model), 2);
   }
 
   cv::Mat get_activations_image()
@@ -290,7 +294,7 @@ struct tbt_model_t
       core.note_map = read_note_map_from_file(params.core.models_path+"/note_map.txt");
     setup(params, true);
 
-    std::counting_semaphore<8> thread_limit(8);
+    std::counting_semaphore<LOADING_THREADS> thread_limit(LOADING_THREADS);
     std::vector<std::future<void>> tasks;
     for(auto model : models){
       thread_limit.acquire();
@@ -418,6 +422,7 @@ inline crow::json::wvalue tbt_params_to_json(const tbt_params_t& params) {
   result["voting_params"] = voting_params_to_json(params.voting_params);
   result["vote_repeats"] = params.vote_repeats;
   result["pred_thresh"] = params.pred_thresh;
+  result["limit_region_notes"] = params.limit_region_notes;
   return result;
 }
 
@@ -433,6 +438,7 @@ inline tbt_params_t tbt_params_from_json(const crow::json::rvalue& j) {
   result.voting_params = voting_params_from_json(j["voting_params"]);
   result.vote_repeats = j["vote_repeats"].i();
   result.pred_thresh = j["pred_thresh"].d();
+  result.limit_region_notes = j["limit_region_notes"].b();
   return result;
 }
 

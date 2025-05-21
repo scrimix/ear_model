@@ -7,7 +7,7 @@
 #include <sstream>
 #include <opencv2/core.hpp>
 
-inline constexpr size_t note_location_resolution = 4096;
+inline constexpr size_t note_location_resolution = 256;
 using note_location_t = std::bitset<note_location_resolution>;
 using note_map_t = std::map<int, note_location_t>;
 

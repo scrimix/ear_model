@@ -2,7 +2,7 @@
 #include "accuracy_score.h"
 #include "named_models.h"
 
-static tbt_params_t params = many_eyes;
+static tbt_params_t params = bandits;
 
 void accuracy_test(tbt_model_t& tbt, bool with_voting = false)
 {
@@ -123,6 +123,7 @@ void train_tbt_voting()
 
       tbt.core.load_audio_file_and_notes(file);
       tbt.reset_tms();
+      auto reset_ts = 0;
       while(tbt.core.carfac_reader.get_render_pos() < tbt.core.audio.total_bytes()){
         auto note_image = tbt.core.carfac_reader.next();
 
@@ -136,6 +137,12 @@ void train_tbt_voting()
 
         std::cout << "\rstep... " << tbt.core.audio_progress() << "%";
         std::cout.flush();
+
+        auto real_ts = note_image.midi_ts / 1000.f;
+        if(real_ts - reset_ts > 1.f){
+          tbt.reset_tms();
+          reset_ts = real_ts;
+        }
       }
       std::cout << "\n";
 
@@ -157,8 +164,8 @@ void test_tbt()
 
 int main()
 {
-  // train_tbt_regions();
-  // if(params.use_voting_tm)
-  //   train_tbt_voting();
+  train_tbt_regions();
+  if(params.use_voting_tm)
+    train_tbt_voting();
   test_tbt();
 }

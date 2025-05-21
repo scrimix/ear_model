@@ -67,7 +67,30 @@ static tbt_params_t many_eyes = []() -> tbt_params_t {
     result.regions = basic_regions();
     concat(&result.regions, more_regions());
     concat(&result.regions, generateFoveatedRegions(cv::Size(800,600), 8));
-    result.train_dirs = { "train/rnd_train", "train/rnd_multi", "train/midi_train"  };
-    result.voting_dirs = { "train/rnd_train", "train/rnd_multi", "train/midi_train"  };
+    result.train_dirs = { "train/rnd_train", "train/rnd_multi" };
+    result.voting_dirs = { "train/rnd_train", "train/rnd_multi" };
+    return result;
+}();
+
+static tbt_params_t bandits = []() -> tbt_params_t {
+    tbt_params_t result;
+    result.core.models_path = "bandits";
+    result.core.with_note_location = false;
+    result.core.with_tm = false;
+    result.core.height = 32;
+    result.core.width = 32;
+    result.core.column_count = 16;
+    result.vote_repeats = 0;
+    result.use_voting_tm = true;
+    result.pred_thresh = 0.099;
+    result.voting_params.cell_count = 8;
+    result.limit_region_notes = true;
+    result.regions = top_bottom_regions();
+    concat(&result.regions, generate_diagonal_regions(5, cv::Size(800,600), cv::Size(300,200), 0.7));
+    concat(&result.regions, generate_diagonal_regions(5, cv::Size(800,600), cv::Size(200,100), 0.7, false));
+
+    // concat(&result.regions, generateFoveatedRegions(cv::Size(800,600), 8));
+    result.train_dirs = { "train/rnd_train", "train/rnd_multi" };
+    result.voting_dirs = { "train/rnd_train", "train/rnd_multi" };
     return result;
 }();

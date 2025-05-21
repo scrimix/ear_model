@@ -148,3 +148,82 @@ inline std::ostream& operator<<(std::ostream& os, midi_event_t const& midi_event
     os << " [" << midi_event.ticks.front().index << ":" << midi_event.ticks.back().index << "]" << ")";
     return os;
 }
+
+inline float midi_to_freq(float midi) {
+    return 440.0f * std::pow(2.0f, (midi - 69.0f) / 12.0f);
+}
+
+inline float freq_to_midi(float freq) {
+    return 69.0f + 12.0f * std::log2(freq / 440.0f);
+}
+
+inline float log_interp(float y_norm, float f_min, float f_max) {
+    return f_min * std::pow(f_max / f_min, y_norm);
+}
+
+inline std::pair<int, int> get_midi_range_for_region(
+    int region_y,
+    int region_height,
+    int image_height,
+    float f_min = 27.5f,
+    float f_max = 8186.0f
+) {
+    float y0 = static_cast<float>(region_y) / image_height;
+    float y1 = static_cast<float>(region_y + region_height) / image_height;
+
+    // flip to match frequency axis
+    y0 = 1.0f - y0;
+    y1 = 1.0f - y1;
+
+    float freq0 = f_min * std::pow(f_max / f_min, y0);
+    float freq1 = f_min * std::pow(f_max / f_min, y1);
+
+    float f_low = std::min(freq0, freq1);
+    float f_high = std::max(freq0, freq1);
+
+    int midi_low = static_cast<int>(std::floor(freq_to_midi(f_low)));
+    int midi_high = static_cast<int>(std::ceil(freq_to_midi(f_high)));
+
+    // midi_low = std::max(midi_low - 5, 21);
+    // midi_high = std::min(midi_high + 5, 108);
+
+    return {midi_low, midi_high};
+}
+
+inline std::vector<uint32_t> filter_and_remap_midi(
+    const std::vector<uint32_t>& midi_notes,
+    uint32_t midi_low,
+    uint32_t midi_high
+) {
+    std::vector<uint32_t> local_labels;
+    for (int note : midi_notes) {
+        if (note >= midi_low && note <= midi_high) {
+            int local_label = note - midi_low + 1; // 1 to have 0 value as empty label
+            local_labels.push_back(local_label);
+        }
+    }
+    return local_labels;
+}
+
+inline int remap_midi_back(uint32_t local_label, uint32_t midi_low) {
+    return (local_label-1) + midi_low; // 1 to have 0 value as empty label
+}
+
+
+inline std::vector<uint32_t> labels_to_region_specific(std::vector<uint32_t> labels, cv::Rect region, cv::Size image_size)
+{
+    auto [midi_low, midi_high] = get_midi_range_for_region(region.y, region.height, image_size.height);
+    auto region_specific = filter_and_remap_midi(labels, midi_low, midi_high);
+    if(region_specific.empty())
+        region_specific.push_back(0);
+    return region_specific;
+}
+
+inline std::vector<int> labels_from_region_to_global(std::vector<int> region_specific, cv::Rect region, cv::Size image_size)
+{
+    auto [midi_low, midi_high] = get_midi_range_for_region(region.y, region.height, image_size.height);
+    std::vector<int> result;
+    for(auto& label : region_specific)
+        result.push_back(remap_midi_back(label, midi_low));
+    return result;
+}

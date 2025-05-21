@@ -52,24 +52,57 @@ struct voting_t
   void setup(voting_params_t in_params)
   {
     params = in_params;
-    auto dimensions = std::vector<uint32_t>{note_location_resolution, 1};
+    // auto dimensions = std::vector<uint32_t>{note_location_resolution, 1};
+    auto dimensions = std::vector<uint32_t>{uint32_t(note_location_resolution*in_params.region_count), 1};
     input.initialize(dimensions);
     tm.initialize(dimensions, params.cell_count, 13, 0.21, 0.5, 10, 20, 0.1, 0.1, 0, 42, params.context_length, params.context_length);
     clsr.initialize( /* alpha */ 0.001f);
   }
 
+  std::vector<note_location_t> region_preds_to_location(std::vector<std::vector<int>> const& region_preds)
+  {
+    std::vector<note_location_t> notes_per_region;
+    for(auto i = 0; i < region_preds.size(); i++){
+      note_location_t note_set;
+
+      // encode each note with same region (here we stack regions, not overlap)
+      for(auto& note : region_preds.at(i))
+        note_set |= encode_note_shifted(note, 0, 5);
+      if(!note_set.any())
+        note_set = encode_note_shifted(0, 0, 5);
+      
+      // each note is the same sdr pattern, but region shifts by 1
+      // for(auto& note : region_preds.at(i))
+      //   note_set |= encode_note_shifted(note, i, 10);
+      // if(!note_set.any())
+      //   note_set = encode_note_shifted(0, i, 10);
+
+      // each note has a zone, and a pattern inside for region
+      // for(auto& note : region_preds.at(i))
+      //   note_set |= encode_note_region_bucketed(note, i, 128, region_preds.size(), 5);
+      // if(!note_set.any())
+      //   note_set = encode_note_region_bucketed(0, i, 128, region_preds.size(), 5);
+
+
+      notes_per_region.push_back(note_set);
+    }
+    return notes_per_region;
+  }
+
   void train(std::vector<uint32_t> const& labels, std::vector<note_location_t> const& notes_per_region)
   {
-    // note_sdr.clear();
-    // for(auto& note_loc : notes_per_region){
-    //   auto notes = note_location_to_vec(note_loc);
-    //   concat(&note_sdr, notes);
-    // }
+    // stacking
+    note_sdr.clear();
+    for(auto& note_loc : notes_per_region){
+      auto notes = note_location_to_vec(note_loc);
+      concat(&note_sdr, notes);
+    }
 
-    note_location_t note_sdr_bits;
-    for(auto& region : notes_per_region)
-      note_sdr_bits |= region;
-    note_sdr = note_location_to_vec(note_sdr_bits);
+    // overlapping
+    // note_location_t note_sdr_bits;
+    // for(auto& region : notes_per_region)
+    //   note_sdr_bits |= region;
+    // note_sdr = note_location_to_vec(note_sdr_bits);
 
     auto sparse_note_sdr = to_sparse_indices(note_sdr);
     input.setSparse(sparse_note_sdr);
@@ -77,6 +110,7 @@ struct voting_t
     // input.setDense(note_sdr);
 
     input.addNoise(0.05);
+
     // tm.compute(input, true);
     // tm.activateDendrites();
     // tm_out = tm.cellsToColumns(tm.getPredictiveCells());
@@ -87,10 +121,16 @@ struct voting_t
 
   std::vector<int> infer(std::vector<note_location_t> const& notes_per_region)
   {
-    note_location_t note_sdr_bits;
-    for(auto& region : notes_per_region)
-      note_sdr_bits |= region;
-    note_sdr = note_location_to_vec(note_sdr_bits);
+    note_sdr.clear();
+    for(auto& note_loc : notes_per_region){
+      auto notes = note_location_to_vec(note_loc);
+      concat(&note_sdr, notes);
+    }
+
+    // note_location_t note_sdr_bits;
+    // for(auto& region : notes_per_region)
+    //   note_sdr_bits |= region;
+    // note_sdr = note_location_to_vec(note_sdr_bits);
     
     auto sparse_note_sdr = to_sparse_indices(note_sdr);
     input.setSparse(sparse_note_sdr);
@@ -108,8 +148,6 @@ struct voting_t
 
   cv::Mat get_voting_image()
   {
-    if(note_sdr.empty())
-      return {};
     auto [rows, cols] = square_ish_sdr(note_sdr.size());
     auto note_mat = vector_to_mat(note_sdr, rows, cols);
     return note_mat;
@@ -117,8 +155,11 @@ struct voting_t
 
   void visualize()
   {
+    if(note_sdr.empty())
+      return;
     show("note_sdr", get_voting_image());
-    // show("voting_tm", sdr1DToColorMapBySlice(tm_out));
+    // if(tm_out.size > 0)
+    //   show("voting_tm", sdr1DToColorMapBySlice(tm_out));
   }
 
   void save(std::string models_path)

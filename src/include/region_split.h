@@ -361,3 +361,75 @@ inline std::vector<cv::Rect> more_regions()
     result.push_back(cv::Rect(136, 47, 526, 203));
     return result;
 }
+
+inline std::vector<cv::Rect> top_bottom_regions()
+{
+    std::vector<cv::Rect> result;
+    result.push_back(cv::Rect(96, 74, 147, 526));
+    result.push_back(cv::Rect(314, 234, 375, 174));
+    result.push_back(cv::Rect(512, 249, 200, 253));
+    result.push_back(cv::Rect(503, 69, 100, 412));
+    result.push_back(cv::Rect(114, 140, 341, 138));
+
+    result.push_back(cv::Rect(410, 142, 318, 159));
+    result.push_back(cv::Rect(300, 31, 233, 492));
+    result.push_back(cv::Rect(132, 347, 563, 253));
+    result.push_back(cv::Rect(136, 47, 526, 203));
+    return result;
+}
+
+inline std::vector<cv::Rect> generate_diagonal_regions(
+    int num_regions,
+    const cv::Size& image_size,
+    const cv::Size& default_size = cv::Size(200, 100),
+    float center_bias = 1.0f,               // 1 = full diagonal, 0 = only center
+    bool bottom_left_to_top_right = true,
+    int offset_jitter = 15,
+    int size_jitter = 10,
+    int seed = 42 
+) {
+    std::vector<cv::Rect> regions;
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<int> jitter_offset(-offset_jitter, offset_jitter);
+    std::uniform_int_distribution<int> jitter_size(-size_jitter, size_jitter);
+
+    // Clamp bias
+    center_bias = std::clamp(center_bias, 0.0f, 1.0f);
+
+    // Diagonal start/end
+    cv::Point2f start, end;
+    if (bottom_left_to_top_right) {
+        start = cv::Point2f(0.0f, static_cast<float>(image_size.height - default_size.height));
+        end   = cv::Point2f(static_cast<float>(image_size.width - default_size.width), 0.0f);
+    } else {
+        start = cv::Point2f(0.0f, 0.0f);
+        end   = cv::Point2f(static_cast<float>(image_size.width - default_size.width),
+                           static_cast<float>(image_size.height - default_size.height));
+    }
+
+    // Active range of t around center
+    float t_min = 0.5f - 0.5f * center_bias;
+    float t_max = 0.5f + 0.5f * center_bias;
+
+    for (int i = 0; i < num_regions; ++i) {
+        float t = static_cast<float>(i) / std::max(1, num_regions - 1);
+        float warped_t = t_min + t * (t_max - t_min);  // shrink t around center
+
+        cv::Point2f base_pos = start + (end - start) * warped_t;
+
+        int x = static_cast<int>(std::round(base_pos.x)) + jitter_offset(rng);
+        int y = static_cast<int>(std::round(base_pos.y)) + jitter_offset(rng);
+
+        int w = default_size.width + jitter_size(rng);
+        int h = default_size.height + jitter_size(rng);
+
+        x = std::clamp(x, 0, image_size.width - 1);
+        y = std::clamp(y, 0, image_size.height - 1);
+        w = std::min(w, image_size.width - x);
+        h = std::min(h, image_size.height - y);
+
+        regions.emplace_back(cv::Rect(x, y, w, h));
+    }
+
+    return regions;
+}
