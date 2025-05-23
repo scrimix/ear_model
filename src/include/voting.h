@@ -148,6 +148,12 @@ struct voting_t
 
   cv::Mat get_voting_image()
   {
+    if(note_sdr.empty()){
+      auto result = cv::Mat(cv::Size(300,300), CV_8UC3);
+      result = cv::Scalar(0);
+      return result;
+    }
+
     auto [rows, cols] = square_ish_sdr(note_sdr.size());
     auto note_mat = vector_to_mat(note_sdr, rows, cols);
     return note_mat;

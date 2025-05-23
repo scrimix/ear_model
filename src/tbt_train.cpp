@@ -164,8 +164,8 @@ void test_tbt()
 
 int main()
 {
-  train_tbt_regions();
-  if(params.use_voting_tm)
-    train_tbt_voting();
+  // train_tbt_regions();
+  // if(params.use_voting_tm)
+  //   train_tbt_voting();
   test_tbt();
 }

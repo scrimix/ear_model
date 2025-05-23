@@ -59,12 +59,15 @@ struct runner_t
     {
         auto models_dir = "../../stable_models"s;
         for(auto model_dir : fs::directory_iterator(models_dir)){
+            auto model_name = fs::path(model_dir).stem();
+            if(model_name != "many_eyes")
+                continue;
             if(model_dir.path().stem().string().starts_with("."))
                 continue;
             auto model = std::make_shared<tbt_model_t>();
             model->params.core.models_path = model_dir.path();
             model->loadv2();
-            models[fs::path(model_dir).stem()] = model;
+            models[model_name] = model;
         }
 
         if(models.empty()){
@@ -335,7 +338,7 @@ void run_web_app() {
     std::atomic_bool demo_paused = false;
     std::atomic_bool stop_demo = false;
     std::atomic_int64_t packet_counter = 0;
-    const int buffering_packets = int(2.5 / (1024./44100.));
+    const int buffering_packets = int(2.5 / (1024./44100.)) * 3;
     std::thread demo;
     smf::MidiFile midi_file;
     std::atomic_bool is_midi_demo = false;

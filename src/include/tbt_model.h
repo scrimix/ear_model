@@ -430,10 +430,14 @@ inline tbt_params_t tbt_params_from_json(const crow::json::rvalue& j) {
   tbt_params_t result;
   result.core = params_from_json(j["core"]);
   result.regions = regions_from_json(j["regions"]);
-  for (size_t i = 0; i < j["train_dirs"].size(); ++i)
-    result.train_dirs.push_back(j["train_dirs"][i].s());
-  for (size_t i = 0; i < j["voting_dirs"].size(); ++i)
-    result.voting_dirs.push_back(j["voting_dirs"][i].s());
+  if(j.has("train_dirs")){
+    for (size_t i = 0; i < j["train_dirs"].size(); ++i)
+      result.train_dirs.push_back(j["train_dirs"][i].s());
+  }
+  if(j.has("voting_dirs")){
+    for (size_t i = 0; i < j["voting_dirs"].size(); ++i)
+      result.voting_dirs.push_back(j["voting_dirs"][i].s());
+  }
   result.use_voting_tm = j["use_voting_tm"].b();
   result.voting_params = voting_params_from_json(j["voting_params"]);
   result.vote_repeats = j["vote_repeats"].i();
