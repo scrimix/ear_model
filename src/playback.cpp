@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     // std::string file_path = "../../sound_data/rnd_single.wav";
     // auto loudness_coef = 70;
 
-    std::string file_path = "../../dataset/warmup/piano_warmup_stereo.wav";
+    std::string file_path = "../dataset/train/rnd_train/arpegio_test_c6_c4.wav";
     // auto loudness_coef = 0.1;
 
     carfac_reader_t carfac_reader;

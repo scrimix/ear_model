@@ -1,4 +1,7 @@
 build/
 htm/
+eigen/
+sound_fonts/
+dataset/
 .cache/
 .DS_store

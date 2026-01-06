@@ -6,7 +6,7 @@ static tbt_params_t params = bandits;
 
 void accuracy_test(tbt_model_t& tbt, bool with_voting = false)
 {
-  std::string test_dir = "../../dataset/test";
+  std::string test_dir = "../dataset/train";
   auto files = list_audio_files(test_dir);
   std::sort(files.begin(), files.end());
   for(auto file : files){
@@ -58,13 +58,19 @@ void train_tbt_regions()
     tbt.loadv2();
   }
 
-  auto root = "../../dataset/"s;
+  auto root = "../dataset/"s;
   std::vector<std::string> dirs = params.train_dirs;
   for(auto& dir : dirs)
     dir = root + dir;
 
   for(auto dir : dirs){
-    for(auto file : list_audio_files(dir)){
+    auto files = list_audio_files(dir);
+    std::sort(files.begin(), files.end());
+    std::cout << "Training dir: " << dir << std::endl;
+    for(auto& file : files)
+      std::cout << "\tfile: " << file << std::endl;
+
+    for(auto& file : files){
       std::cout << "loading file: " << file << std::endl;
 
       if(check_and_gen_if_midi(file))
@@ -164,8 +170,8 @@ void test_tbt()
 
 int main()
 {
-  // train_tbt_regions();
+  train_tbt_regions();
   // if(params.use_voting_tm)
   //   train_tbt_voting();
-  test_tbt();
+  // test_tbt();
 }

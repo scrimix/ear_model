@@ -91,7 +91,7 @@ int main() {
     std::FILE* wav = std::fopen(input_file.c_str(), "rb");
     assert(wav != nullptr);
     // Seek past 44-byte header and one second into the recording.
-    assert(std::fseek(wav, 44 + int(kSampleRateHz)*2, SEEK_CUR) == 0);
+    // assert(std::fseek(wav, 44 + int(kSampleRateHz)*2, SEEK_CUR) == 0);
 
     constexpr float kSampleRateHz = 44100.0f;
     constexpr int kChunkSize = 512;  // 11 ms.

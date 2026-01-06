@@ -3,14 +3,16 @@ project(ear_model)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_BUILD_TYPE Release)
 
-include_directories("/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk/usr/include/c++/v1")
+# include_directories("/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk/usr/include/c++/v1")
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FLUIDSYNTH REQUIRED fluidsynth)
 
 find_package(OpenCV REQUIRED)
 find_package(SDL2 REQUIRED)
+list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/eigen") # add eigen to cmake prefix path
 add_subdirectory(carfac)
 
 include_directories(htm/include)

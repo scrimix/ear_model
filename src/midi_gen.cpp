@@ -147,8 +147,10 @@ usage(char *prog_name)
 
 void generate_midi(std::string file_name = "rnd")
 {
-    std::string sound_font_path = "../../sound_fonts/Steinway-Chateau-Plus-Instruments-v1.7.sf2";
-    std::string dir = "../../dataset/rnd_train";
+    std::string sound_font_path = "../sound_fonts/sound_font.sf2";
+    std::string dir = "../dataset/train/rnd_train";
+
+    fs::create_directories(dir);
 
     int n;
     fluid_settings_t *settings;

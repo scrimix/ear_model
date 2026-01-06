@@ -6,7 +6,7 @@ static const std::string model_name = "poly";
 
 void train_notes(note_model_t& model)
 {
-  auto root = "../../dataset/"s;
+  auto root = "../dataset/"s;
 
   // std::vector<std::string> dirs = {
   //   "warmup", "warmup", "train/train2", "train/rnd_train"
@@ -18,7 +18,7 @@ void train_notes(note_model_t& model)
 
   // auto dirs = { "../../../maestro-v3.0.0" };
 
-  std::vector<std::string> dirs = { "train/rnd_train", "train/rnd_multi" };
+  std::vector<std::string> dirs = { "rnd_train" };
 
   for(auto& dir : dirs)
     dir = root + dir;
@@ -88,7 +88,7 @@ void test_notes(note_model_t& model)
   if(!model.load(model_name))
     return;
 
-  auto test_dir = "../../dataset/train/rnd_multi";
+  auto test_dir = "../dataset/rnd_train";
   // auto test_dir = "../../../maestro-v3.0.0";
 
   for(auto file : list_audio_files(test_dir)){
